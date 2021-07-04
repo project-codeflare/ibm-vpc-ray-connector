@@ -102,11 +102,25 @@ def print_to_file(format, filename, result):
             config = yaml.safe_load(f)
             config['provider'].update(result['provider'])
 
+            question = [
+              inquirer.Text('name', message="Cluster name, either leave default or type a new one", default='default'),
+              inquirer.Text('min_workers', message="Minimum number of worker nodes", default='0'),
+              inquirer.Text('max_workers', message="Maximum number of worker nodes", default='0')
+            ]
+
+            answers = inquirer.prompt(question)
+            config['cluster_name'] = answers['name']
+            config['max_workers'] = int(answers['max_workers'])
+
             if config.get('available_node_types'):
                 for available_node_type in config['available_node_types']:
                     config['available_node_types'][available_node_type]['node_config'].update(result['node_config'])
+                    config['available_node_types'][available_node_type]['min_workers'] = int(answers['min_workers'])
+                    config['available_node_types'][available_node_type]['max_workers'] = int(answers['max_workers'])
             else:
                 config['available_node_types'] = {'ray_head_default': {'node_config': result['node_config']}}
+                config['available_node_types']['ray_head_default']['min_workers'] = int(answers['min_workers'])
+                config['available_node_types']['ray_head_default']['max_workers'] = int(answers['max_workers'])
 
             with open(filename, 'w') as outfile:
                 yaml.dump(config,  outfile, default_flow_style=False)
