@@ -133,7 +133,7 @@ setup_commands:
     - apt install libgl1-mesa-glx -y && pip install pandas tabulate gym tensorboardX dm_tree opencv-python starlette uvicorn
     - echo alias python=\'python3\'>>~/.bash_aliases
     - which ray || pip3 install -U https://s3-us-west-2.amazonaws.com/ray-wheels/master/1df19a04fe2b9960ba364cbcc8da996cb214bfa8/ray-2.0.0.dev0-cp38-cp38-manylinux2014_x86_64.whl
-    - export GIT_SSH_COMMAND="ssh -i ~/ray_bootstrap_key.pem" && pip install git+ssh://git@github.com:project-codeflare/gen2-connector.git
+    - export GIT_SSH_COMMAND="ssh -i ~/ray_bootstrap_key.pem" && git clone git@github.com:project-codeflare/gen2-connector.git && cd gen2-connector && pip install .
 
 # Custom commands that will be run on the head node after common setup.
 head_setup_commands: []
