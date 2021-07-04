@@ -45,7 +45,7 @@ class Gen2NodeProvider(NodeProvider):
         self.cached_nodes = {}
 
     def _get_node_type(self, node):
-        for tag in ['tags']:
+        for tag in node['tags']:
             kv = tag.split(':')
             if kv[0] == 'ray-node-type':
                 return kv[1]
@@ -105,21 +105,19 @@ class Gen2NodeProvider(NodeProvider):
                     continue
                 raise e
 
-            nic_id = node['doc']['network_interfaces'][0]['id']
-            res = self.ibm_vpc_client.list_instance_network_interface_floating_ips(instance_id, nic_id).get_result()
-
-            floating_ips = res['floating_ips']
-
             node_type = self._get_node_type(node)
-            if len(floating_ips) == 0:
-                if node_type == 'head':
-                # not adding a head node that is missing floating ip
-                    continue
-            else:
-                # currently head node should always have floating ip.
-                # in case floating ip present we want to add it
-                node['floating_ips'] = floating_ips
+            if node_type == 'head':
+                nic_id = node['doc']['network_interfaces'][0]['id']
+                res = self.ibm_vpc_client.list_instance_network_interface_floating_ips(instance_id, nic_id).get_result()
 
+                floating_ips = res['floating_ips']
+                if len(floating_ips) == 0:
+                    # not adding a head node that is missing floating ip
+                    continue
+                else:
+                    # currently head node should always have floating ip.
+                    # in case floating ip present we want to add it
+                    node['floating_ips'] = floating_ips
             nodes.append(node)
 
         self.cached_nodes = {node["resource_id"]: node for node in nodes}

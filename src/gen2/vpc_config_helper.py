@@ -104,12 +104,14 @@ def print_to_file(format, filename, result):
 
             question = [
               inquirer.Text('name', message="Cluster name, either leave default or type a new one", default='default'),
+              inquirer.Text('ssh_private_key', message="SSH Private Key", default='~/.ssh/id_rsa'),
               inquirer.Text('min_workers', message="Minimum number of worker nodes", default='0'),
               inquirer.Text('max_workers', message="Maximum number of worker nodes", default='0')
             ]
 
             answers = inquirer.prompt(question)
             config['cluster_name'] = answers['name']
+            config['auth']['ssh_private_key'] = answers['ssh_private_key']
             config['max_workers'] = int(answers['max_workers'])
 
             if config.get('available_node_types'):
@@ -133,8 +135,8 @@ def print_to_file(format, filename, result):
         with open(filename, 'w') as outfile:
             yaml.dump(result,  outfile, default_flow_style=False)
 
-    print("\n=================================================")
-    print(f"Results stored in {filename}")
+    print("\n\n=================================================")
+    print(f"Cluster config file: {filename}")
     print("=================================================")
          
 
@@ -155,7 +157,6 @@ def print_to_file(format, filename, result):
 def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id, ssh_key_id, image_id, instance_profile_name, volume_profile_name, head_ip, format):
     authenticator = IAMAuthenticator(iam_api_key)
     ibm_vpc_client = VpcV1('2021-01-19', authenticator=authenticator)
-
 
     result = {}
 
