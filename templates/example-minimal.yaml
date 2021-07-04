@@ -1,0 +1,41 @@
+# A unique identifier for the head node and workers of this cluster.
+cluster_name: minimal
+
+# The maximum number of worker nodes to launch in addition to the head
+# node. min_workers default to 0.
+max_workers: 1
+
+# Cloud-provider specific configuration.
+provider:
+    type: gen2
+    endpoint: https://us-east.iaas.cloud.ibm.com
+    zone_name: us-east-2
+    iam_api_key: IAM_API_KEY # please, specify your own api key. can be created at https://cloud.ibm.com/iam/apikeys
+
+# How Ray will authenticate with newly launched nodes.
+auth:
+    ssh_user: root
+    ssh_private_key: ~/.ssh/id_rsa
+
+available_node_types:
+    ray_head_default:
+        min_workers: 1
+        max_workers: 1
+        resources: {"CPU": 2}
+        # Provider-specific config for this node type, e.g. instance type
+        # For more documentation, see:
+        # https://cloud.ibm.com/docs/vpc
+        # Alternatively use interactive vpc_config_helper.py to generate this configuration
+        node_config:
+            vpc_id: VPC_ID
+            resource_group_id: RESOURCE_GROUP_ID
+            security_group_id: SECURITY_GROUP_ID
+            subnet_id: SUBNET_ID
+            key_id: SSH_KEY_ID
+            image_id: IMAGE_ID
+            instance_profile_name: VM_PROFILE_NAME
+            volume_tier_name: VOLUME_TIER
+
+file_mounts: {
+    "/root/ray": "/home/kpavel/ray"
+}
