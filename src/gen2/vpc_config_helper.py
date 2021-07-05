@@ -136,7 +136,7 @@ def print_to_file(format, filename, result):
             yaml.dump(result,  outfile, default_flow_style=False)
 
     print("\n\n=================================================")
-    print(f"Cluster config file: {filename}")
+    print(f"\033[92mCluster config file: {filename}\033[0m")
     print("=================================================")
          
 
@@ -155,6 +155,8 @@ def print_to_file(format, filename, result):
 @click.option('--head_ip', help='head node floating ip')
 @click.option('--format', type=click.Choice(['lithops', 'ray']), help='if not specified will print plain text')
 def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id, ssh_key_id, image_id, instance_profile_name, volume_profile_name, head_ip, format):
+    print(f"\n\033[92mWelcome to vpc config export helper\033[0m\n")
+
     authenticator = IAMAuthenticator(iam_api_key)
     ibm_vpc_client = VpcV1('2021-01-19', authenticator=authenticator)
 
@@ -264,5 +266,4 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
 
 
 if __name__ == '__main__':
-    print(f'\nWelcome to vpc config export helper\n')
     builder()

@@ -52,6 +52,19 @@ pip install .
 
 ```ray up /tmp/tmpkf0dztfk.yaml```
 
-* After finished, use browser to open ray dashboard on PUBLIC_HEAD_IP:8265
+* After finished, find cluster head node and worker nodes ips:
+
+```
+ray get-head-ip /tmp/tmpkf0dztfk.yaml
+ray get-worker-ips /tmp/tmpkf0dztfk.yaml
+```
+
+* To get status of the cluster
+
+```
+ray status --address PUBLIC_HEAD_IP:6379
+```
+
+* Use browser to open ray dashboard on PUBLIC_HEAD_IP:8265. Alternatively use `ray dashboard` to forward ray cluster dashboard to your localhost. 
 
 * Submit example task `ray submit /tmp/tmpkf0dztfk.yaml templates/example.py`

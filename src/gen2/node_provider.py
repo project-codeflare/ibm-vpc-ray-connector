@@ -35,20 +35,6 @@ def _create_vpc_client(endpoint, authenticator):
 
 
 class Gen2NodeProvider(NodeProvider):
-    def __init__(self, provider_config, cluster_name):
-        NodeProvider.__init__(self, provider_config, cluster_name)
-
-        self._init()
-
-        self.lock = threading.RLock()
-        # Cache of node objects from the last nodes() call
-        self.cached_nodes = {}
-
-    def _get_node_type(self, node):
-        for tag in node['tags']:
-            kv = tag.split(':')
-            if kv[0] == 'ray-node-type':
-                return kv[1]
 
     def log_in_out(func):
 
@@ -75,6 +61,21 @@ class Gen2NodeProvider(NodeProvider):
         self.global_tagging_service = GlobalTaggingV1(self.authenticator)
         self.global_search_service = GlobalSearchV2(self.authenticator)
 
+    def __init__(self, provider_config, cluster_name):
+        NodeProvider.__init__(self, provider_config, cluster_name)
+
+        self._init()
+
+        self.lock = threading.RLock()
+        # Cache of node objects from the last nodes() call
+        self.cached_nodes = {}
+
+    def _get_node_type(self, node):
+        for tag in node['tags']:
+            kv = tag.split(':')
+            if kv[0] == 'ray-node-type':
+                return kv[1]
+
     @log_in_out
     def non_terminated_nodes(self, tag_filters):
         # get all nodes tagged for cluster "query":"tags:\"ray-cluster-name:default\" AND tags:\"ray-node-type:head\""
@@ -86,7 +87,7 @@ class Gen2NodeProvider(NodeProvider):
             result = self.global_search_service.search(query=query, fields=['*']).get_result()
         except ApiException as e:
             if e.code == 500 and 'error when asking authorization' in e.message:
-                _init()
+                self._init()
             else:
                 raise e
             result = self.global_search_service.search(query=query, fields=['*']).get_result()
@@ -149,19 +150,37 @@ class Gen2NodeProvider(NodeProvider):
             node = self._get_cached_node(node_id)
             return self._tags_to_dict(node['tags'])
 
+    def _get_hybrid_ip(self, node_id):
+        node = self._get_cached_node(node_id)
+        node_type = self._get_node_type(node)
+        if node_type == 'head':
+            fip = node.get("floating_ips")
+            if fip:
+                return fip[0]['address']
+
+            node = self._get_node(node_id)
+            fip = node.get("floating_ips")
+            if fip:
+                return fip[0]['address']
+        else:
+            return self.internal_ip(node_id)
+
     @log_in_out
     def external_ip(self, node_id):
-        ip = None
         with self.lock:
-            node = self._get_cached_node(node_id)
-            # TODO: add error check
-            ip = node.get("floating_ips")[0]['address']
-            
-        if ip is None:
-            node = self._get_node(node_id)
-            ip = node.get("floating_ips")[0]['address']
+            if self.provider_config.get('use_hybrid_ips'):
+                return self._get_hybrid_ip(node_id)
 
-        return ip
+            node = self._get_cached_node(node_id)
+
+            fip = node.get("floating_ips")
+            if fip:
+                return fip[0]['address']
+            
+            node = self._get_node(node_id)
+            fip = node.get("floating_ips")
+            if fip:
+                return fip[0]['address']
 
     def internal_ip(self, node_id):
         node = self._get_cached_node(node_id)
