@@ -362,12 +362,23 @@ class Gen2NodeProvider(NodeProvider):
             tags[TAG_RAY_CLUSTER_NAME] = self.cluster_name
 
             _tags = [f"{k}:{v}" for k,v in tags.items()]
-            time.sleep(10)
-            tag_results = self.global_tagging_service.attach_tag(
-                resources=[resource_model],
-                tag_names=_tags,
-                tag_type='user').get_result()
-            logger.info(f"in create_node, tagged node {instance['crn']} with {_tags} results {tag_results}")
+            for retry in range(3):
+                time.sleep(10)
+
+                tag_results = self.global_tagging_service.attach_tag(
+                    resources=[resource_model],
+                    tag_names=_tags,
+                    tag_type='user').get_result()
+
+                logger.info(f"in create_node, tagged node {instance['crn']} with {_tags} results {tag_results}")
+                if not tag_results['results'][0]['is_error']:
+                    break
+
+            if tag_results['results'][0]['is_error']:
+                # terminate the weird node that failed to be tagged
+                self.terminate_node(instance['resource_id'])
+                logger.info(f"failed to tag node {instance}, terminating instance")
+                return
 
             # currently always creating public ip for head node
             if tags['ray-node-type'] == 'head':# or not self.provider_config.get("use_internal_ips", False):
