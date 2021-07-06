@@ -1,3 +1,4 @@
+import os
 import click
 import tempfile
 import inquirer
@@ -32,11 +33,68 @@ def get_option_from_list(msg, choices, default=None, choice_key='name', do_nothi
     
     # now find the object by name in the list
     if answers['answer'] == do_nothing:
-        return None
+        return do_nothing
     else:
         return next((x for x in choices if x[choice_key] == answers['answer']), None)
 
-def find_name_id(objects, msg, obj_id=None, obj_name=None, default=None):
+def validate_not_empty(answers, current):
+    if not current:
+        raise errors.ValidationError('', "Key name can't be empty")
+    return True
+
+def register_ssh_key(ibm_vpc_client, resource_group_id):
+    questions = [
+      inquirer.Text('keyname', message='Please specify a name for the new key', validate=validate_not_empty)
+    ]
+    answers = inquirer.prompt(questions)
+    keyname = answers['keyname']
+
+#    EXISTING_CONTENTS = 'Paste existing public key contents'
+    EXISTING_PATH = 'Provide path to existing public key'
+    GENERATE_NEW = 'Generate new public key'
+
+    questions = [
+            inquirer.List('answer',
+                message="Please choose",
+                choices=[EXISTING_PATH, GENERATE_NEW]
+            )]
+
+    answers = inquirer.prompt(questions)
+    ssh_key_data = ""
+#    if answers["answer"] == EXISTING_CONTENTS:
+#        print("Registering from file contents")
+#        questions = [
+#          inquirer.Text('keycontents', message='Please paste contents of your public ssh key', validate=validate_not_empty)
+#        ]
+#        answers = inquirer.prompt(questions)
+#        ssh_key_data = answers["keycontents"]
+#    el
+    ssh_key_path = None
+    if answers["answer"] == EXISTING_PATH:
+        print("Register in vpc existing key from path")
+        questions = [
+          inquirer.Text("public_key_path", message='Please paste path to your public ssh key', validate=validate_not_empty)
+        ]
+        answers = inquirer.prompt(questions)
+
+        with open(answers["public_key_path"], 'r') as file:
+            ssh_key_data = file.read()
+    else:
+        print("generate new public key")
+        filename = f"id.rsa.{keyname}"
+        os.system(f'ssh-keygen -b 2048 -t rsa -f {filename} -q -N ""')
+        print(f"Generated\n")
+        print(f"private key: {filename}")
+        print(f"public key {filename}.pub")
+        with open(f"{filename}.pub", 'r') as file:
+            ssh_key_data = file.read()
+        ssh_key_path = os.path.abspath(filename)
+
+    response = ibm_vpc_client.create_key(public_key=ssh_key_data, name=keyname, resource_group={"id": resource_group_id}, type='rsa')
+    result = response.get_result()
+    return result['name'], result['id'], ssh_key_path
+
+def find_name_id(objects, msg, obj_id=None, obj_name=None, default=None, do_nothing=None):
     if obj_id:
         # just validating that obj exists
         obj_name = next((obj['name'] for obj in objects if obj['id'] == obj_id), None)
@@ -46,7 +104,10 @@ def find_name_id(objects, msg, obj_id=None, obj_name=None, default=None):
         obj_id = next((obj['id'] for obj in objects if obj['name'] == obj_name), None)
 
     if not obj_id and not obj_name:
-        obj = get_option_from_list(msg, objects, default=default)
+        obj = get_option_from_list(msg, objects, default=default, do_nothing=do_nothing)
+        if do_nothing and obj == do_nothing:
+            return None, None
+
         obj_id = obj['id']
         obj_name = obj['name']
 
@@ -69,6 +130,8 @@ def convert_to_ray(data):
     result['node_config']['volume_tier_name'] = data['volume_profile_name']
     if data.get('head_ip'):
         result['node_config']['head_ip'] = data['head_ip']
+
+    result['ssh_key_path'] = data['ssh_key_path']
 
     return result
 
@@ -104,14 +167,13 @@ def print_to_file(format, filename, result):
 
             question = [
               inquirer.Text('name', message="Cluster name, either leave default or type a new one", default='default'),
-              inquirer.Text('ssh_private_key', message="SSH Private Key", default='~/.ssh/id_rsa'),
               inquirer.Text('min_workers', message="Minimum number of worker nodes", default='0'),
               inquirer.Text('max_workers', message="Maximum number of worker nodes", default='0')
             ]
 
             answers = inquirer.prompt(question)
             config['cluster_name'] = answers['name']
-            config['auth']['ssh_private_key'] = answers['ssh_private_key']
+            config['auth']['ssh_private_key'] = result['ssh_key_path']
             config['max_workers'] = int(answers['max_workers'])
 
             if config.get('available_node_types'):
@@ -208,6 +270,25 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
     result['resource_group_id'] = vpc_obj['resource_group']['id']
     result['resource_group_name'] = vpc_obj['resource_group']['name']
 
+    ssh_key_objects = ibm_vpc_client.list_keys().get_result()['keys']
+    CREATE_NEW_SSH_KEY = "Register new SSH key in IBM VPC"
+    ssh_key_name, ssh_key_id = find_name_id(ssh_key_objects, 'Choose ssh key', obj_id=ssh_key_id, do_nothing=CREATE_NEW_SSH_KEY)
+
+    ssh_key_path = None
+    if not ssh_key_name:
+        ssh_key_name, ssh_key_id, ssh_key_path  = register_ssh_key(ibm_vpc_client, result['resource_group_id'])
+
+    if not ssh_key_path:
+        questions = [
+          inquirer.Text("private_key_path", message='Please paste path to \033[92mprivate\033[0m ssh key binded with selected public key', validate=validate_not_empty)#, default="~/.ssh/id_rsa")
+        ]
+        answers = inquirer.prompt(questions)
+        ssh_key_path = os.path.abspath(answers["private_key_path"])
+
+    result['ssh_key_name'] = ssh_key_name
+    result['ssh_key_id'] = ssh_key_id
+    result['ssh_key_path'] = ssh_key_path
+
     sec_group_objects = ibm_vpc_client.list_security_groups().get_result()['security_groups']
     sec_group_name, sec_group_id = find_name_id(sec_group_objects, "Choose security group", obj_id=sec_group_id)
     result['sec_group_name'] = sec_group_name
@@ -227,7 +308,7 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
         if free_floating_ips:
             ALLOCATE_NEW_FLOATING_IP = 'Allocate new floating ip'
             head_ip_obj = get_option_from_list("Choose head ip", free_floating_ips, choice_key='address', do_nothing=ALLOCATE_NEW_FLOATING_IP)
-            if head_ip_obj:
+            if head_ip_obj and (head_ip_obj != ALLOCATE_NEW_FLOATING_IP):
                 result['head_ip'] = head_ip_obj['address']
 
     subnet_objects = ibm_vpc_client.list_subnets().get_result()['subnets']
@@ -235,13 +316,8 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
     result['subnet_name'] = subnet_name
     result['subnet_id'] = subnet_id
 
-    ssh_key_objects = ibm_vpc_client.list_keys().get_result()['keys']
-    ssh_key_name, ssh_key_id = find_name_id(ssh_key_objects, 'Choose ssh key', obj_id=ssh_key_id)
-    result['ssh_key_name'] = ssh_key_name
-    result['ssh_key_id'] = ssh_key_id
-
     image_objects = ibm_vpc_client.list_images().get_result()['images']
-    image_name, image_id = find_name_id(image_objects, 'Choose VM image', obj_id=image_id, default='ibm-ubuntu-20-04-minimal-amd64-2')
+    image_name, image_id = find_name_id(image_objects, 'Choose Ubuntu 20.04 VM image. Currently only Ubuntu supported', obj_id=image_id, default='ibm-ubuntu-20-04-minimal-amd64-2')
     result['image_name'] = image_name
     result['image_id'] = image_id
 
