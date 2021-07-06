@@ -73,14 +73,14 @@ def register_ssh_key(ibm_vpc_client, resource_group_id):
     if answers["answer"] == EXISTING_PATH:
         print("Register in vpc existing key from path")
         questions = [
-          inquirer.Text("public_key_path", message='Please paste path to your public ssh key', validate=validate_not_empty)
+          inquirer.Text("public_key_path", message='Please paste path to your \033[92mpublic\033[0m ssh key', validate=validate_not_empty)
         ]
         answers = inquirer.prompt(questions)
 
         with open(answers["public_key_path"], 'r') as file:
             ssh_key_data = file.read()
     else:
-        print("generate new public key")
+        print("generate new keypair")
         filename = f"id.rsa.{keyname}"
         os.system(f'ssh-keygen -b 2048 -t rsa -f {filename} -q -N ""')
         print(f"Generated\n")
@@ -280,10 +280,10 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
 
     if not ssh_key_path:
         questions = [
-          inquirer.Text("private_key_path", message='Please paste path to \033[92mprivate\033[0m ssh key binded with selected public key', validate=validate_not_empty)#, default="~/.ssh/id_rsa")
+          inquirer.Text("private_key_path", message=f'Please paste path to \033[92mprivate\033[0m ssh key binded with selected public key {ssh_key_name}', validate=validate_not_empty, default="~/.ssh/id_rsa")
         ]
         answers = inquirer.prompt(questions)
-        ssh_key_path = os.path.abspath(answers["private_key_path"])
+        ssh_key_path = os.path.abspath(os.path.expanduser(answers["private_key_path"]))
 
     result['ssh_key_name'] = ssh_key_name
     result['ssh_key_id'] = ssh_key_id
@@ -317,7 +317,7 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
     result['subnet_id'] = subnet_id
 
     image_objects = ibm_vpc_client.list_images().get_result()['images']
-    image_name, image_id = find_name_id(image_objects, 'Choose Ubuntu 20.04 VM image. Currently only Ubuntu supported', obj_id=image_id, default='ibm-ubuntu-20-04-minimal-amd64-2')
+    image_name, image_id = find_name_id(image_objects, 'Please choose \033[92mUbuntu\033[0m 20.04 VM image, currently only Ubuntu supported', obj_id=image_id, default='ibm-ubuntu-20-04-minimal-amd64-2')
     result['image_name'] = image_name
     result['image_id'] = image_id
 
