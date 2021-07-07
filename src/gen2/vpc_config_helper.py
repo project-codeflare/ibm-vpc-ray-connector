@@ -45,7 +45,7 @@ def validate_not_empty(answers, current):
     return True
 
 def validate_exists(answers, current):
-    if not current or not os.path.exists(current):
+    if not current or not os.path.exists(os.path.abspath(os.path.expanduser(current))):
         raise errors.ValidationError('', reason=f"File {current} doesn't exist")
     return True
 
@@ -86,8 +86,8 @@ def register_ssh_key(ibm_vpc_client, resource_group_id):
         filename = f"id.rsa.{keyname}"
         os.system(f'ssh-keygen -b 2048 -t rsa -f {filename} -q -N ""')
         print(f"Generated\n")
-        print(f"private key: {filename}")
-        print(f"public key {filename}.pub")
+        print(f"private key: {os.path.abspath(filename)}")
+        print(f"public key {os.path.abspath(filename)}.pub")
         with open(f"{filename}.pub", 'r') as file:
             ssh_key_data = file.read()
         ssh_key_path = os.path.abspath(filename)
@@ -118,6 +118,7 @@ def find_name_id(objects, msg, obj_id=None, obj_name=None, default=None, do_noth
 def convert_to_ray(data):
     result = {'provider': {}, 'node_config': {}}
 
+    result['provider']['region'] = data['region']
     result['provider']['zone_name'] = data['zone']
     result['provider']['endpoint'] = data['endpoint']
     result['provider']['iam_api_key'] = data['iam_api_key'] #TODO:
@@ -151,26 +152,32 @@ def convert_to_lithops(data):
 
     return result
 
-def print_to_file(format, filename, result):
+def print_to_file(format, output_file, result, input_file):
     if format:
         print(f"converting results to {format} format")
 
-    if not filename:
-        filename = tempfile.mkstemp(suffix = '.yaml')[1]
+    if not output_file:
+        output_file = tempfile.mkstemp(suffix = '.yaml')[1]
 
     if format == 'ray':
         result = convert_to_ray(result)
         
-        defaults_config_path = path.abspath(path.join(__file__ ,"../../etc/gen2-connector/defaults.yaml"))
+        defaults_config_path = input_file or path.abspath(path.join(__file__ ,"../../etc/gen2-connector/defaults.yaml"))
+        template_config, _, node_template, _ = get_template_config(input_file)
 
         with open(defaults_config_path) as f: #TODO: find path
             config = yaml.safe_load(f)
             config['provider'].update(result['provider'])
 
+            default_cluster_name = template_config.get('cluster_name', 'default')
+            default_min_workers = node_template.get('min_workers', '0')
+            default_max_workers = node_template.get('max_workers', '0')
+
+
             question = [
-              inquirer.Text('name', message="Cluster name, either leave default or type a new one", default='default'),
-              inquirer.Text('min_workers', message="Minimum number of worker nodes", default='0'),
-              inquirer.Text('max_workers', message="Maximum number of worker nodes", default='0')
+              inquirer.Text('name', message="Cluster name, either leave default or type a new one", default=default_cluster_name),
+              inquirer.Text('min_workers', message="Minimum number of worker nodes", default=default_min_workers),
+              inquirer.Text('max_workers', message="Maximum number of worker nodes", default=default_max_workers)
             ]
 
             answers = inquirer.prompt(question)
@@ -181,6 +188,10 @@ def print_to_file(format, filename, result):
             if config.get('available_node_types'):
                 for available_node_type in config['available_node_types']:
                     config['available_node_types'][available_node_type]['node_config'].update(result['node_config'])
+
+                    if not result['node_config'].get('head_ip'):
+                        config['available_node_types'][available_node_type]['node_config'].pop('head_ip', None)
+
                     config['available_node_types'][available_node_type]['min_workers'] = int(answers['min_workers'])
                     config['available_node_types'][available_node_type]['max_workers'] = int(answers['max_workers'])
             else:
@@ -188,24 +199,57 @@ def print_to_file(format, filename, result):
                 config['available_node_types']['ray_head_default']['min_workers'] = int(answers['min_workers'])
                 config['available_node_types']['ray_head_default']['max_workers'] = int(answers['max_workers'])
 
-            with open(filename, 'w') as outfile:
+            with open(output_file, 'w') as outfile:
                 yaml.dump(config,  outfile, default_flow_style=False)
     elif format == 'lithops':
         result = convert_to_lithops(result)
      
-        with open(filename, 'w') as outfile:
+        with open(output_file, 'w') as outfile:
             yaml.dump(result,  outfile, default_flow_style=False)
     else:
-        with open(filename, 'w') as outfile:
+        with open(output_file, 'w') as outfile:
             yaml.dump(result,  outfile, default_flow_style=False)
 
     print("\n\n=================================================")
-    print(f"\033[92mCluster config file: {filename}\033[0m")
+    print(f"\033[92mCluster config file: {output_file}\033[0m")
     print("=================================================")
          
+# currently supported only for ray
+def get_template_config(input_file):
+    template_config = {}
+    provider_template = {}
+    node_template = {}
+    node_config = {}
+
+    if input_file:
+        with open(input_file) as f:
+             template_config = yaml.safe_load(f)
+             provider_template = template_config.get('provider', {})
+             node_configs = tuple(template_config.get('available_node_types', {}).values())
+
+             if node_configs:
+                 node_template = node_configs[0]
+                 node_config = node_configs[0].get('node_config', {})
+
+    return template_config, provider_template, node_template, node_config
+
+def find_default(template_dict, objects, name=None, id=None):
+    val = None
+    if name:
+        key = 'name'
+        val = template_dict.get(name)
+    elif id:
+        key='id'
+        val = template_dict.get(id)
+
+    if val:
+        obj = next((obj for obj in objects if obj[key] == val), None)
+        if obj:
+            return obj['name']
 
 @click.command()
-@click.option('--filename', '-f', help='Filename to save configurations')
+@click.option('--output_file', '-o', help='Output filename to save configurations')
+@click.option('--input_file', '-i', help=f'Template for new configuration, default: {path.abspath(path.join(__file__ ,"../../etc/gen2-connector/defaults.yaml"))}')
 @click.option('--iam_api_key', required=True, help='IAM_API_KEY')
 @click.option('--region', help='region')
 @click.option('--zone', help='availability zone name')
@@ -218,8 +262,10 @@ def print_to_file(format, filename, result):
 @click.option('--volume_profile_name', default='general-purpose', help='volume profile name')
 @click.option('--head_ip', help='head node floating ip')
 @click.option('--format', type=click.Choice(['lithops', 'ray']), help='if not specified will print plain text')
-def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id, ssh_key_id, image_id, instance_profile_name, volume_profile_name, head_ip, format):
+def builder(output_file, input_file, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id, ssh_key_id, image_id, instance_profile_name, volume_profile_name, head_ip, format):
     print(f"\n\033[92mWelcome to vpc config export helper\033[0m\n")
+
+    template_config, provider_template, node_template, node_config = get_template_config(input_file) 
 
     authenticator = IAMAuthenticator(iam_api_key)
     ibm_vpc_client = VpcV1('2021-01-19', authenticator=authenticator)
@@ -230,7 +276,8 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
     endpoint = None
     regions_objects = ibm_vpc_client.list_regions().get_result()['regions']
     if not region:
-        region_obj = get_option_from_list("Choose region:", regions_objects)
+        default = find_default(provider_template, regions_objects, name='region')
+        region_obj = get_option_from_list("Choose region", regions_objects, default = default)
         region = region_obj['name']
         endpoint = region_obj['endpoint']
     else:
@@ -244,17 +291,22 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
     result['endpoint'] = endpoint
 
     # find availability zone
+    zones_objects = ibm_vpc_client.list_region_zones(region).get_result()['zones']
+    zone_obj = None
     if not zone:
-        zone_obj = get_option_from_list("Choose availability zone:", ibm_vpc_client.list_region_zones(region).get_result()['zones'])
-        zone = zone_obj['name']
+        default = find_default(provider_template, zones_objects, name='zone_name')
+        zone_obj = get_option_from_list("Choose availability zone", zones_objects, default = default)
+    else:
+        zone_obj = next((obj for obj in zones_objects if obj['name'] == zone), None)
 
-    result['zone'] = zone
+    result['zone'] = zone_obj['name']
 
     vpc_name = ''
     vpc_obj = None
     vpc_objects = ibm_vpc_client.list_vpcs().get_result()['vpcs']
     if not vpc_id:
-        vpc_obj = get_option_from_list("Choose vpc:", vpc_objects)
+        default = find_default(node_config, vpc_objects, id='vpc_id')
+        vpc_obj = get_option_from_list("Choose vpc", vpc_objects, default = default)
         vpc_id = vpc_obj['id']
         vpc_name = vpc_obj['name']
     else:
@@ -274,7 +326,9 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
 
     ssh_key_objects = ibm_vpc_client.list_keys().get_result()['keys']
     CREATE_NEW_SSH_KEY = "Register new SSH key in IBM VPC"
-    ssh_key_name, ssh_key_id = find_name_id(ssh_key_objects, 'Choose ssh key', obj_id=ssh_key_id, do_nothing=CREATE_NEW_SSH_KEY)
+
+    default = find_default(node_config, ssh_key_objects, id='key_id')
+    ssh_key_name, ssh_key_id = find_name_id(ssh_key_objects, 'Choose ssh key', obj_id=ssh_key_id, do_nothing=CREATE_NEW_SSH_KEY, default=default)
 
     ssh_key_path = None
     if not ssh_key_name:
@@ -292,12 +346,15 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
     result['ssh_key_path'] = ssh_key_path
 
     sec_group_objects = ibm_vpc_client.list_security_groups().get_result()['security_groups']
-    sec_group_name, sec_group_id = find_name_id(sec_group_objects, "Choose security group", obj_id=sec_group_id)
+
+    default = find_default(node_config, sec_group_objects, id='security_group_id')
+    sec_group_name, sec_group_id = find_name_id(sec_group_objects, "Choose security group", obj_id=sec_group_id, default=default)
     result['sec_group_name'] = sec_group_name
     result['sec_group_id'] = sec_group_id
 
+    floating_ips = ibm_vpc_client.list_floating_ips().get_result()['floating_ips']
     if head_ip:
-        for ip in ibm_vpc_client.list_floating_ips().get_result()['floating_ips']:
+        for ip in floating_ips:
             if ip['address'] == head_ip:
                 if ip.get('target'):
                     raise Exception(f"Specified head ip {head_ip} occupied, please choose another or let ray create a new one")
@@ -305,7 +362,6 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
                     result['head_ip'] = head_ip
                     break
     else:
-        floating_ips = ibm_vpc_client.list_floating_ips().get_result()['floating_ips']
         free_floating_ips = [x for x in floating_ips if not x.get('target')]
         if free_floating_ips:
             ALLOCATE_NEW_FLOATING_IP = 'Allocate new floating ip'
@@ -314,12 +370,15 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
                 result['head_ip'] = head_ip_obj['address']
 
     subnet_objects = ibm_vpc_client.list_subnets().get_result()['subnets']
-    subnet_name, subnet_id = find_name_id(subnet_objects, "Choose subnet", obj_id=subnet_id)
+    default = find_default(node_config, subnet_objects, id='subnet_id')
+    subnet_name, subnet_id = find_name_id(subnet_objects, "Choose subnet", obj_id=subnet_id, default=default)
     result['subnet_name'] = subnet_name
     result['subnet_id'] = subnet_id
 
     image_objects = ibm_vpc_client.list_images().get_result()['images']
-    image_name, image_id = find_name_id(image_objects, 'Please choose \033[92mUbuntu\033[0m 20.04 VM image, currently only Ubuntu supported', obj_id=image_id, default='ibm-ubuntu-20-04-minimal-amd64-2')
+    default = find_default(node_config, image_objects, id='image_id') or 'ibm-ubuntu-20-04-minimal-amd64-2'
+
+    image_name, image_id = find_name_id(image_objects, 'Please choose \033[92mUbuntu\033[0m 20.04 VM image, currently only Ubuntu supported', obj_id=image_id, default=default)
     result['image_name'] = image_name
     result['image_id'] = image_id
 
@@ -330,7 +389,8 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
         if not instance_profile_name:
             raise Exception(f"specified instance_profile_name {instance_profile_name} not found")
     else:
-        obj = get_option_from_list('Carefully choose instance profile, please refer to https://cloud.ibm.com/docs/vpc?topic=vpc-profiles', instance_profile_objects)
+        default = find_default(node_config, instance_profile_objects, name='instance_profile_name')
+        obj = get_option_from_list('Carefully choose instance profile, please refer to https://cloud.ibm.com/docs/vpc?topic=vpc-profiles', instance_profile_objects, default=default)
         instance_profile_name = obj['name']
 
     result['instance_profile_name'] = instance_profile_name
@@ -338,9 +398,9 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
     result['volume_profile_name'] = volume_profile_name
     result['iam_api_key'] = iam_api_key
 
-    print(f"vpc name: {vpc_name} id: {vpc_id}\nzone: {zone}\nendpoint: {endpoint}\nregion: {region}\nresource group name: {result['resource_group_name']} id: {result['resource_group_id']}\nsecurity group name: {sec_group_name} id: {sec_group_id}\nsubnet name: {subnet_name} id: {subnet_id}\nssh key name: {ssh_key_name} id {ssh_key_id}\nimage name: {image_name} id: {image_id}\n")
+    print(f"vpc name: {vpc_name} id: {vpc_id}\nzone: {zone_obj['name']}\nendpoint: {endpoint}\nregion: {region}\nresource group name: {result['resource_group_name']} id: {result['resource_group_id']}\nsecurity group name: {sec_group_name} id: {sec_group_id}\nsubnet name: {subnet_name} id: {subnet_id}\nssh key name: {ssh_key_name} id {ssh_key_id}\nimage name: {image_name} id: {image_id}\n")
 
-    print_to_file(format, filename, result)
+    print_to_file(format, output_file, result, input_file)
 
 
 if __name__ == '__main__':

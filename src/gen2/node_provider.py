@@ -83,20 +83,21 @@ class Gen2NodeProvider(NodeProvider):
         for k, v in tag_filters.items():
             query += f" AND tags:\"{k}:{v}\""
 
-        try:
+        with self.lock:
+          try:
             result = self.global_search_service.search(query=query, fields=['*']).get_result()
-        except ApiException as e:
+          except ApiException as e:
             if e.code == 500 and 'error when asking authorization' in e.message:
                 self._init()
             else:
                 raise e
             result = self.global_search_service.search(query=query, fields=['*']).get_result()
 
-        items = result['items']
-        nodes = []
+          items = result['items']
+          nodes = []
 
-        # update objects with floating ips. 
-        for node in items:
+          # update objects with floating ips. 
+          for node in items:
             instance_id = node['resource_id']
             try:
                 self.ibm_vpc_client.get_instance(instance_id)
@@ -121,7 +122,7 @@ class Gen2NodeProvider(NodeProvider):
                     node['floating_ips'] = floating_ips
             nodes.append(node)
 
-        self.cached_nodes = {node["resource_id"]: node for node in nodes}
+          self.cached_nodes = {node["resource_id"]: node for node in nodes}
 
         return [node["resource_id"] for node in nodes]
 
@@ -207,28 +208,13 @@ class Gen2NodeProvider(NodeProvider):
 
 #            import pdb;pdb.set_trace()
 
-            # find all tags with same key as new tags
+            # find all tags with same key as new tags but will different value
             for old_tag_key in list(tags_dict.keys()):
-                if old_tag_key not in tags:
+                if old_tag_key not in tags or tags.get(old_tag_key) == tags_dict[old_tag_key]:
                     del tags_dict[old_tag_key]
 
-            # convert to gen2 format
-            old_tags = [f"{k}:{v}" for k,v in tags_dict.items()]
-
-            # detach old tags. yes, it probably may break few things, because set_tags is not atomic
-            if old_tags:
-                tag_results = self.global_tagging_service.detach_tag(
-                    resources=[resource_model],
-                    tag_names=old_tags,
-                    tag_type='user').get_result()
-
-                logger.info("===========================")
-                logger.info(f"detached {old_tags}, result {tag_results}")
-                logger.info("===========================")
-
+            # first attach new tags
             _tags = [f"{k}:{v}" for k,v in tags.items()]
-            
-            # now attach new tags
             tag_results = self.global_tagging_service.attach_tag(
                 resources=[resource_model],
                 tag_names=_tags,
@@ -237,6 +223,20 @@ class Gen2NodeProvider(NodeProvider):
             logger.info("===========================")
             logger.info(f"attached {_tags}, result {tag_results}")
             logger.info("===========================")
+
+            # convert to gen2 format
+            old_tags = [f"{k}:{v}" for k,v in tags_dict.items()]
+
+            # and now detach old tags. yes, it probably may break few things, because set_tags is not atomic
+            if old_tags:
+                self.global_tagging_service.detach_tag(
+                    resources=[resource_model],
+                    tag_names=old_tags,
+                    tag_type='user').get_result()
+
+                logger.info("===========================")
+                logger.info(f"detached {old_tags}, result {tag_results}")
+                logger.info("===========================")
 
             return tag_results
 
