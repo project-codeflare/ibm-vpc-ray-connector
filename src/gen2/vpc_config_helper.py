@@ -10,6 +10,8 @@ from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
 from ibm_platform_services import GlobalSearchV2, GlobalTaggingV1
 from ibm_vpc import VpcV1
 
+from inquirer import errors
+
 def get_option_from_list(msg, choices, default=None, choice_key='name', do_nothing=None):
     if(len(choices) == 0):
         error_msg = f"There no option for {msg}"
@@ -39,7 +41,12 @@ def get_option_from_list(msg, choices, default=None, choice_key='name', do_nothi
 
 def validate_not_empty(answers, current):
     if not current:
-        raise errors.ValidationError('', "Key name can't be empty")
+        raise errors.ValidationError('', reason=f"Key name can't be empty")
+    return True
+
+def validate_exists(answers, current):
+    if not current or not os.path.exists(current):
+        raise errors.ValidationError('', reason=f"File {current} doesn't exist")
     return True
 
 def register_ssh_key(ibm_vpc_client, resource_group_id):
@@ -49,31 +56,26 @@ def register_ssh_key(ibm_vpc_client, resource_group_id):
     answers = inquirer.prompt(questions)
     keyname = answers['keyname']
 
-#    EXISTING_CONTENTS = 'Paste existing public key contents'
+    EXISTING_CONTENTS = 'Paste existing public key contents'
     EXISTING_PATH = 'Provide path to existing public key'
     GENERATE_NEW = 'Generate new public key'
 
     questions = [
             inquirer.List('answer',
                 message="Please choose",
-                choices=[EXISTING_PATH, GENERATE_NEW]
+                choices=[EXISTING_PATH, EXISTING_CONTENTS, GENERATE_NEW]
             )]
 
     answers = inquirer.prompt(questions)
     ssh_key_data = ""
-#    if answers["answer"] == EXISTING_CONTENTS:
-#        print("Registering from file contents")
-#        questions = [
-#          inquirer.Text('keycontents', message='Please paste contents of your public ssh key', validate=validate_not_empty)
-#        ]
-#        answers = inquirer.prompt(questions)
-#        ssh_key_data = answers["keycontents"]
-#    el
     ssh_key_path = None
-    if answers["answer"] == EXISTING_PATH:
+    if answers["answer"] == EXISTING_CONTENTS:
+        print("Registering from file contents")
+        ssh_key_data = input("[\033[33m?\033[0m] Please paste the contents of your public ssh key. It should start with ssh-rsa: ")
+    elif answers["answer"] == EXISTING_PATH:
         print("Register in vpc existing key from path")
         questions = [
-          inquirer.Text("public_key_path", message='Please paste path to your \033[92mpublic\033[0m ssh key', validate=validate_not_empty)
+          inquirer.Text("public_key_path", message='Please paste path to your \033[92mpublic\033[0m ssh key', validate=validate_exists)
         ]
         answers = inquirer.prompt(questions)
 
@@ -280,7 +282,7 @@ def builder(filename, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id
 
     if not ssh_key_path:
         questions = [
-          inquirer.Text("private_key_path", message=f'Please paste path to \033[92mprivate\033[0m ssh key binded with selected public key {ssh_key_name}', validate=validate_not_empty, default="~/.ssh/id_rsa")
+          inquirer.Text("private_key_path", message=f'Please paste path to \033[92mprivate\033[0m ssh key matching with selected public key {ssh_key_name}', validate=validate_exists, default="~/.ssh/id_rsa")
         ]
         answers = inquirer.prompt(questions)
         ssh_key_path = os.path.abspath(os.path.expanduser(answers["private_key_path"]))
