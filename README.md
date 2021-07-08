@@ -5,9 +5,7 @@
 2. Install gen2-connector on your machine
 
 ```
-git clone git@github.com:project-codeflare/gen2-connector.git
-cd gen2-connector
-pip install .
+pip install gen2-connector
 ```
 
 3. Configure ibm vpc

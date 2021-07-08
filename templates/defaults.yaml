@@ -115,7 +115,7 @@ setup_commands:
     - apt install libgl1-mesa-glx -y && pip install pandas tabulate gym tensorboardX dm_tree opencv-python starlette uvicorn
     - echo alias python=\'python3\'>>~/.bash_aliases
     - which ray || pip3 install -U https://s3-us-west-2.amazonaws.com/ray-wheels/master/1df19a04fe2b9960ba364cbcc8da996cb214bfa8/ray-2.0.0.dev0-cp38-cp38-manylinux2014_x86_64.whl
-    - pip install gen2-connector==1.0.0 
+    - pip install gen2-connector
 
 # Custom commands that will be run on the head node after common setup.
 head_setup_commands: []
