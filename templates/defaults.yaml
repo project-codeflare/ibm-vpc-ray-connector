@@ -84,7 +84,7 @@ file_mounts: {
 # list of paths. The same path on the head node will be copied to the worker node.
 # This behavior is a subset of the file_mounts behavior. In the vast majority of cases
 # you should just use file_mounts. Only use this if you know what you're doing!
-cluster_synced_files: [~/ray_bootstrap_key.pem]
+#cluster_synced_files: [~/ray_bootstrap_key.pem] # in case worker needs the key
 
 # Whether changes to directories in file_mounts or cluster_synced_files in the head node
 # should sync to the worker node continuously
@@ -115,7 +115,7 @@ setup_commands:
     - apt install libgl1-mesa-glx -y && pip install pandas tabulate gym tensorboardX dm_tree opencv-python starlette uvicorn
     - echo alias python=\'python3\'>>~/.bash_aliases
     - which ray || pip3 install -U https://s3-us-west-2.amazonaws.com/ray-wheels/master/1df19a04fe2b9960ba364cbcc8da996cb214bfa8/ray-2.0.0.dev0-cp38-cp38-manylinux2014_x86_64.whl
-    - export GIT_SSH_COMMAND="ssh -i ~/ray_bootstrap_key.pem" && ssh-keyscan github.ibm.com >> ~/.ssh/known_hosts && git clone git@github.ibm.com:KPAVEL/gen2-connector.git && cd gen2-connector && pip install .
+    - ssh-keyscan github.com >> ~/.ssh/known_hosts && git clone git@github.com:project-codeflare/gen2-connector.git && cd gen2-connector && pip install .
 
 # Custom commands that will be run on the head node after common setup.
 head_setup_commands: []
