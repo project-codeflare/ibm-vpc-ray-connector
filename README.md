@@ -1,6 +1,6 @@
 **gen2-connector provides Ray plugin to manage clusters over ibm gen2 infrastructure**
 
-1. Install [Ray](https://github.com/ray-project/ray) release 1.4.1 using `pip install ray==1.4.1`
+1. Install [Ray](https://github.com/ray-project/ray) release 1.4.1 using `pip install ray[default]==1.4.1`
 
 2. Install gen2-connector on your machine
 
