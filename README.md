@@ -1,4 +1,4 @@
-# gen2-connector enables Ray cluster to be deployed over IBM Gen2 infrastructure
+# Gen2-connector enables Ray cluster to be deployed over IBM Gen2 infrastructure
 
 1. Install [Ray](https://github.com/ray-project/ray) release 1.4.1 using `pip install ray[default]==1.4.1`
 
