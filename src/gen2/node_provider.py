@@ -103,12 +103,9 @@ class Gen2NodeProvider(NodeProvider):
           try:
             result = self.global_search_service.search(query=query, fields=['*']).get_result()
           except ApiException as e:
-            if e.code == 500:# and 'error when asking authorization' in e.message:
                 logger.warning(f"failed to query global search service with message: {e.message}, reiniting now")
                 self._init()
-            else:
-                raise e
-            result = self.global_search_service.search(query=query, fields=['*']).get_result()
+                result = self.global_search_service.search(query=query, fields=['*']).get_result()
 
           items = result['items']
           nodes = []
