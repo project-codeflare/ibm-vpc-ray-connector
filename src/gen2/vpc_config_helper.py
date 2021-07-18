@@ -263,20 +263,150 @@ def find_default(template_dict, objects, name=None, id=None):
         if obj:
             return obj['name']
 
+REQUIRED_RULES = {'outbound_tcp_all': 'selected security group is missing rule permitting outbound TCP access\n', 'outbound_udp_all': 'selected security group is missing rule permitting outbound UDP access\n', 'inbound_tcp_sg': 'selected security group is missing rule permiting inbound tcp traffic inside selected security group\n', 'inbound_tcp_22': 'selected security group is missing rule permiting inbound traffic to tcp port 22 required for ssh\n', 'inbound_tcp_6379': 'selected security group is missing rule permiting inbound traffic to tcp port 6379 required for Redis\n', 'inbound_tcp_8265': 'selected security group is missing rule permiting inbound traffic to tcp port 8265 required to access Ray Dashboard\n'}
+
+def validate_security_group(ibm_vpc_client, sg_id):
+    required_rules = REQUIRED_RULES.copy()
+
+    sg = ibm_vpc_client.get_security_group(sg_id).get_result()
+
+    for rule in sg['rules']:
+        # check inboud and outbound rules
+        if rule['direction'] == 'outbound' and rule['remote'] == {'cidr_block': '0.0.0.0/0'}:
+            if rule['protocol'] == 'all':
+                # outbound is fine!
+                required_rules.pop('outbound_tcp_all', None)
+                required_rules.pop('outbound_udp_all', None)
+            elif rule['protocol'] == 'tcp':
+                required_rules.pop('outbound_tcp_all', None)
+            elif rule['protocol'] == 'udp':
+                required_rules.pop('outbound_udp_all', None)
+        elif rule['direction'] == 'inbound':
+            if rule['remote'] == {'cidr_block': '0.0.0.0/0'}:
+                # we interested only in all or tcp protocols
+                if rule['protocol'] == 'all':
+                    # there a rule permitting all traffic
+                    required_rules.pop('inbound_tcp_sg', None)
+                    required_rules.pop('inbound_tcp_22', None)
+                    required_rules.pop('inbound_tcp_6379', None)
+                    required_rules.pop('inbound_tcp_8265', None)
+
+                elif rule['protocol'] == 'tcp':
+                    if rule['port_min'] == 1 and rule['port_max'] == 65535:
+                        # all ports are open
+                        required_rules.pop('inbound_tcp_sg', None)
+                        required_rules.pop('inbound_tcp_22', None)
+                        required_rules.pop('inbound_tcp_6379', None)
+                        required_rules.pop('inbound_tcp_8265', None)
+                    else:
+                        port_min = rule['port_min']
+                        port_max = rule['port_max']
+                        if port_min <= 22 and port_max >= 22:
+                            required_rules.pop('inbound_tcp_22', None)
+                        elif port_min <= 6379 and port_max >= 6379:
+                            required_rules.pop('inbound_tcp_6379', None)
+                        elif port_min <= 8265 and port_max >= 8265:
+                            required_rules.pop('inbound_tcp_8265', None)
+
+            elif rule['remote'].get('id') == sg['id']:
+                # validate that inboud trafic inside group available
+                if rule['protocol'] == 'all' or rule['protocol'] == 'tcp':
+                    required_rules.pop('inbound_tcp_sg', None)
+
+    return required_rules
+
+def build_security_group_rule_prototype_model(missing_rule, sg_id=None):
+    direction, protocol, port = missing_rule.split('_')
+    remote = {"cidr_block": "0.0.0.0/0"}
+
+    try:
+        port = int(port)
+        port_min = port
+        port_max = port
+    except:
+        port_min = 1
+        port_max = 65535
+
+        # only valid if security group already exists
+        if port == 'sg':
+            if not sg_id:
+                return None
+            remote = {'id': sg_id}
+
+    return {
+        'direction': direction,
+        'ip_version': 'ipv4',
+        'protocol': protocol,
+        'remote': remote,
+        'port_min': port_min,
+        'port_max': port_max
+        }
+
+def create_security_group(ibm_vpc_client, vpc_id, rg_id):
+    rules = []
+    for rule in REQUIRED_RULES.keys():
+        security_group_rule_prototype_model = build_security_group_rule_prototype_model(rule)
+        if security_group_rule_prototype_model:
+            rules.append(security_group_rule_prototype_model)
+
+    q = [
+          inquirer.Text('name', message="Please, type a name for the new security group", validate=validate_not_empty),
+          inquirer.List('answer', message='Create new security group with all required rules', choices=['yes', 'no'], default='yes')
+          ]
+
+    answers = inquirer.prompt(q)
+    if answers['answer'] == 'yes':
+        vpc_identity_model = {'id': vpc_id}
+        sg = ibm_vpc_client.create_security_group(vpc_identity_model, name=answers['name'], resource_group={"id": rg_id}, rules=rules).get_result() 
+        sg_id = sg['id']
+
+        # add rule to open tcp traffic inside security group
+        security_group_rule_prototype_model = build_security_group_rule_prototype_model('inbound_tcp_sg', sg_id=sg_id)
+        res = ibm_vpc_client.create_security_group_rule(sg_id, security_group_rule_prototype_model).get_result()
+        return sg_id, sg['name'] 
+    else:
+        return None, None
+
+def add_rules_to_security_group(ibm_vpc_client, sg_id, sg_name, missing_rules):
+    add_rule_msgs = {
+            'outbound_tcp_all': f'Add rule to open all outbound TCP ports in selected security group {sg_name}',
+            'outbound_udp_all': f'Add rule to open all outbound UDP ports in selected security group {sg_name}',
+            'inbound_tcp_sg': f'Add rule to open inbound tcp traffic inside selected security group {sg_name}',
+            'inbound_tcp_22': f'Add rule to open inbound tcp port 22 required for SSH in selected security group {sg_name}',
+            'inbound_tcp_6379': f'Add rule to open inbound tcp port 6379 required for Redis in selected security group {sg_name}',
+            'inbound_tcp_8265': f'Add rule to open inbound tcp port 8265 required to access Ray Dashboard in selected security group {sg_name}'}
+
+    for missing_rule in missing_rules.keys():
+        q = [
+                inquirer.List('answer',
+                message=add_rule_msgs[missing_rule],
+                choices=['yes', 'no'],
+                default='yes')
+            ]
+        
+        answers = inquirer.prompt(q)
+        if answers['answer'] == 'yes':
+            security_group_rule_prototype_model = build_security_group_rule_prototype_model(missing_rule, sg_id=sg_id)
+            res = ibm_vpc_client.create_security_group_rule(sg_id, security_group_rule_prototype_model).get_result()
+        else:
+            return False
+    return True
+
+
 @click.command()
-@click.option('--output_file', '-o', help='Output filename to save configurations')
-@click.option('--input_file', '-i', help=f'Template for new configuration, default: {path.abspath(path.join(__file__ ,"../../etc/gen2-connector/defaults.yaml"))}')
-@click.option('--iam_api_key', required=True, help='IAM_API_KEY')
+@click.option('--output-file', '-o', help='Output filename to save configurations')
+@click.option('--input-file', '-i', help=f'Template for new configuration, default: {path.abspath(path.join(__file__ ,"../../etc/gen2-connector/defaults.yaml"))}')
+@click.option('--iam-api-key', required=True, help='IAM_API_KEY')
 @click.option('--region', help='region')
 @click.option('--zone', help='availability zone name')
-@click.option('--vpc_id', help='vpc id')
-@click.option('--sec_group_id', help='security group id')
-@click.option('--subnet_id', help='subnet id')
-@click.option('--ssh_key_id', help='ssh key id')
-@click.option('--image_id', help='image id')
-@click.option('--instance_profile_name', help='instance profile name')
-@click.option('--volume_profile_name', default='general-purpose', help='volume profile name')
-@click.option('--head_ip', help='head node floating ip')
+@click.option('--vpc-id', help='vpc id')
+@click.option('--sec-group-id', help='security group id')
+@click.option('--subnet-id', help='subnet id')
+@click.option('--ssh-key-id', help='ssh key id')
+@click.option('--image-id', help='image id')
+@click.option('--instance-profile-name', help='instance profile name')
+@click.option('--volume-profile-name', default='general-purpose', help='volume profile name')
+@click.option('--head-ip', help='head node floating ip')
 @click.option('--format', type=click.Choice(['lithops', 'ray']), help='if not specified will print plain text')
 def builder(output_file, input_file, iam_api_key, region, zone, vpc_id, sec_group_id, subnet_id, ssh_key_id, image_id, instance_profile_name, volume_profile_name, head_ip, format):
     print(f"\n\033[92mWelcome to vpc config export helper\033[0m\n")
@@ -361,10 +491,63 @@ def builder(output_file, input_file, iam_api_key, region, zone, vpc_id, sec_grou
     result['ssh_key_id'] = ssh_key_id
     result['ssh_key_path'] = ssh_key_path
 
-    sec_group_objects = ibm_vpc_client.list_security_groups().get_result()['security_groups']
+    while True:
 
-    default = find_default(node_config, sec_group_objects, id='security_group_id')
-    sec_group_name, sec_group_id = find_name_id(sec_group_objects, "Choose security group", obj_id=sec_group_id, default=default)
+        CREATE_NEW_SECURITY_GROUP = 'Create new security group'
+
+        sec_group_objects = ibm_vpc_client.list_security_groups().get_result()['security_groups']
+        default = find_default(node_config, sec_group_objects, id='security_group_id')
+        sec_group_name, sec_group_id = find_name_id(sec_group_objects, "Choose security group", obj_id=sec_group_id, do_nothing=CREATE_NEW_SECURITY_GROUP, default=default)
+
+        if not sec_group_name:
+            sec_group_id, sec_group_name = create_security_group(ibm_vpc_client, vpc_id, vpc_obj['resource_group']['id'])
+            if not sec_group_id:
+                continue
+
+        errors = validate_security_group(ibm_vpc_client, sec_group_id)
+        if errors:
+            for val in errors.values():
+                print(f"\033[91m{val}\033[0m")
+
+            SELECT = 'Select again security group'
+            UPDATE_SELECTED = 'Interactively add required rules to selected security group'
+
+            questions = [
+                inquirer.List('answer',
+                    message='Selected security group is missing required rules, see error above, please choose',
+                    choices=[SELECT, UPDATE_SELECTED, CREATE_NEW_SECURITY_GROUP],
+                    default=default,
+                ),]
+
+            answers = inquirer.prompt(questions)
+            sg_done = False
+
+            if answers['answer'] == SELECT:
+                sec_group_id = None
+                continue
+            elif answers['answer'] == UPDATE_SELECTED:
+                # add rules to selected security group
+                sg_done = add_rules_to_security_group(ibm_vpc_client, sec_group_id, sec_group_name, errors)
+            else:
+                # create new security group with all rules
+                sec_group_id, sec_group_name = create_security_group(ibm_vpc_client, vpc_id, vpc_obj['resource_group']['id'])
+                if sec_group_id:
+                    sg_done == True
+    
+            if not sg_done:
+                sec_group_id = None
+                continue
+
+            # just in case, validate again the updated/created security group
+            errors = validate_security_group(ibm_vpc_client, sec_group_id)
+            if not errors:
+                break
+            else:
+                print(f'Something failed during security group rules update/create, please update the required rules manually using ibmcli or web ui and try again')
+                exit(1)
+        else:
+            break
+
     result['sec_group_name'] = sec_group_name
     result['sec_group_id'] = sec_group_id
 

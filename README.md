@@ -15,14 +15,14 @@ pip install gen2-connector
 
 4. Create cluster config file
 
-    * Use interactive `vpc_config` tool to generate cluster.yaml configuration file
+    * Use interactive `vpc-config` tool to generate cluster.yaml configuration file
     ```
-    vpc_config --iam_api_key ${IAM_API_KEY} --format ray --filename cluster.yaml
+    vpc-config --iam-api-key ${IAM_API_KEY} --format ray --filename cluster.yaml
     ```
     
     * Select security group from previous step when prompted
 
-    * The output of the `vpc_config` is a cluster config yaml file, e.g
+    * The output of the `vpc-config` is a cluster config yaml file, e.g
     ```
     =================================================
     Cluster config file: /tmp/tmpkf0dztfk.yaml
