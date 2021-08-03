@@ -27,6 +27,7 @@ provider:
     zone_name: us-east-2
     iam_api_key: IAM_API_KEY
     use_hybrid_ips: True
+    cache_stopped_nodes: False
 
 # How Ray will authenticate with newly launched nodes.
 auth:
@@ -59,7 +60,7 @@ available_node_types:
         # Provider-specific config for this node type, e.g. instance type
         # For more documentation, see:
         # https://cloud.ibm.com/docs/vpc
-        # Alternatively use interactive vpc_config_helper.py to generate this configuration
+        # Alternatively use interactive vpc-config tool to generate this configuration
         node_config:
             vpc_id: VPC_ID
             resource_group_id: RESOURCE_GROUP_ID
@@ -110,11 +111,11 @@ setup_commands:
     # - echo 'export PATH="$HOME/anaconda3/envs/tensorflow_p36/bin:$PATH"' >> ~/.bashrc
     # Install ray if not present
     - sleep 30 && apt update && apt install python3.8 -y && curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && python3.8 get-pip.py
-    - pip install virtualenv && virtualenv -p /usr/bin/python3.8 ~/.venv && echo source ~/.venv/bin/activate >> ~/.bashrc
+    - test -d ~/.venv || (pip install virtualenv && virtualenv -p /usr/bin/python3.8 ~/.venv && echo source ~/.venv/bin/activate >> ~/.bashrc)
     - pip install ibm_vpc ibm_platform_services ibm_cloud_sdk_core
     - apt install libgl1-mesa-glx -y && pip install pandas tabulate gym tensorboardX dm_tree opencv-python starlette uvicorn
     - echo alias python=\'python3\'>>~/.bash_aliases
-    - which ray || pip3 install -U https://s3-us-west-2.amazonaws.com/ray-wheels/master/1df19a04fe2b9960ba364cbcc8da996cb214bfa8/ray-2.0.0.dev0-cp38-cp38-manylinux2014_x86_64.whl
+    - which ray || pip3 install ray==1.5.1 
     - pip install gen2-connector
 
 # Custom commands that will be run on the head node after common setup.
@@ -125,7 +126,7 @@ worker_setup_commands: []
 
 # Command to start ray on the head node. You don't need to change this.
 head_start_ray_commands:
-    - ray stop
+    - ray stop --force --verbose
     - >-
       ulimit -n 65536;
       ray start
@@ -137,7 +138,7 @@ head_start_ray_commands:
 
 # Command to start ray on worker nodes. You don't need to change this.
 worker_start_ray_commands:
-    - ray stop
+    - ray stop --force --verbose
     - >-
       ulimit -n 65536;
       ray start
