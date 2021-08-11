@@ -1,6 +1,8 @@
 # Gen2-connector enables Ray cluster to be deployed over IBM Gen2 infrastructure
 
-1. Install [Ray](https://github.com/ray-project/ray) release 1.4.1 using `pip install ray[default]==1.4.1`
+> Use of python virtual environment, e.g. [virtualenv](https://virtualenv.pypa.io/en/latest) is greatly encouraged, to avoid installing Python packages globally which could break system tools or other projects
+
+1. Install [Ray](https://github.com/ray-project/ray) release 1.5.1 using `pip install ray[default]==1.5.1`
 
 2. Install gen2-connector on your machine
 
@@ -17,7 +19,7 @@ pip install gen2-connector
 
     * Use interactive `vpc-config` tool to generate cluster.yaml configuration file
     ```
-    vpc-config --iam-api-key ${IAM_API_KEY} --format ray --filename cluster.yaml
+    vpc-config --iam-api-key ${IAM_API_KEY} --format ray --output-file cluster.yaml
     ```
     
     * Select security group from previous step when prompted
