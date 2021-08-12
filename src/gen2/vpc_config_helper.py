@@ -28,7 +28,7 @@ from ibm_platform_services import GlobalSearchV2, GlobalTaggingV1, ResourceManag
 from ibm_vpc import VpcV1
 
 from inquirer import errors
-
+import re
 
 RAY_PUBLIC_GATEWAY_NAME = 'ray-cluster-public-gateway'
 RAY_VPC_NAME = 'ray-cluster-vpc'
@@ -104,17 +104,19 @@ def register_ssh_key(ibm_vpc_client, resource_group_id):
         with open(answers["public_key_path"], 'r') as file:
             ssh_key_data = file.read()
     else:
-        print("generate new keypair")
         filename = f"id.rsa.{keyname}"
         os.system(f'ssh-keygen -b 2048 -t rsa -f {filename} -q -N ""')
-        print(f"Generated\n")
+        print(f"\n\n\033[92mSSH key pair been generated\n")
         print(f"private key: {os.path.abspath(filename)}")
-        print(f"public key {os.path.abspath(filename)}.pub")
+        print(f"public key {os.path.abspath(filename)}.pub\033[0m")
         with open(f"{filename}.pub", 'r') as file:
             ssh_key_data = file.read()
         ssh_key_path = os.path.abspath(filename)
 
     response = ibm_vpc_client.create_key(public_key=ssh_key_data, name=keyname, resource_group={"id": resource_group_id}, type='rsa')
+
+    print(f"\033[92mnew SSH key {keyname} been registered in vpc\033[0m")
+
     result = response.get_result()
     return result['name'], result['id'], ssh_key_path
 
@@ -198,8 +200,8 @@ def print_to_file(format, output_file, result, input_file):
 
             question = [
               inquirer.Text('name', message="Cluster name, either leave default or type a new one", default=default_cluster_name),
-              inquirer.Text('min_workers', message="Minimum number of worker nodes", default=default_min_workers),
-              inquirer.Text('max_workers', message="Maximum number of worker nodes", default=default_max_workers)
+              inquirer.Text('min_workers', message="Minimum number of worker nodes", default=default_min_workers, validate=lambda _, x: re.match('^[+]?[0-9]+$', x)),
+              inquirer.Text('max_workers', message="Maximum number of worker nodes", default=default_max_workers, validate=lambda answers, x: re.match('^[+]?[0-9]+$', x) and int(x) >= int(answers['min_workers']))
             ]
 
             answers = inquirer.prompt(question)
@@ -398,11 +400,11 @@ def add_rules_to_security_group(ibm_vpc_client, sg_id, sg_name, missing_rules):
             return False
     return True
 
-def _create_vpc(ibm_vpc_client, resource_group):
+def _create_vpc(ibm_vpc_client, resource_group, vpc_default_name):
     
     q = [
-          inquirer.Text('name', message="Please, type a name for the new VPC", validate=validate_not_empty, default=RAY_VPC_NAME),
-          inquirer.List('answer', message='Create new VPC', choices=['yes', 'no'], default='yes')
+          inquirer.Text('name', message="Please, type a name for the new VPC", validate=validate_not_empty, default=vpc_default_name),
+          inquirer.List('answer', message='Create new VPC and configure required rules in default security group', choices=['yes', 'no'], default='yes')
         ]
 
     answers = inquirer.prompt(q)
@@ -418,6 +420,7 @@ def _select_vpc(ibm_vpc_client, resource_service_client, vpc_id, node_config, re
 
     vpc_name = None
     zone_obj = None
+    sg_id = None
 
     def select_zone(vpc_id):
         # find availability zone
@@ -428,7 +431,11 @@ def _select_vpc(ibm_vpc_client, resource_service_client, vpc_id, node_config, re
             zones = [s_obj['zone']['name'] for s_obj in all_subnet_objects if s_obj['vpc']['id'] == vpc_id]
             zones_objects = [z for z in zones_objects if z['name'] in zones]
 
-        zone_obj = get_option_from_list("Choose availability zone", zones_objects, default = default)
+        try:
+            zone_obj = get_option_from_list("Choose availability zone", zones_objects, default = default)
+        except:
+            raise Exception("Failed to list zones for selected vpc {vpc_id}, please check whether vpc missing subnet")
+
         return zone_obj
 
     
@@ -453,13 +460,23 @@ def _select_vpc(ibm_vpc_client, resource_service_client, vpc_id, node_config, re
         if not vpc_name:
             resource_group_id = select_resource_group()
             resource_group = {'id': resource_group_id}
+
+            # find next default vpc name
+            vpc_default_name = RAY_VPC_NAME
+            c = 1
+            vpc_names = [vpc_obj['name'] for vpc_obj in vpc_objects]
+            while vpc_default_name in vpc_names:
+                vpc_default_name = f'{RAY_VPC_NAME}-{c}' 
+                c += 1
             
-            vpc_obj = _create_vpc(ibm_vpc_client, resource_group)
+            vpc_obj = _create_vpc(ibm_vpc_client, resource_group, vpc_default_name)
             if not vpc_obj:
                 continue
-            else:        
+            else:      
                 vpc_name = vpc_obj['name']
                 vpc_id = vpc_obj['id']
+
+                print(f"\n\n\033[92mVPC {vpc_name} been created\033[0m")
 
                 # create and attach public gateway
                 gateway_prototype = {}
@@ -469,6 +486,8 @@ def _select_vpc(ibm_vpc_client, resource_service_client, vpc_id, node_config, re
                 gateway_prototype['resource_group'] = resource_group
                 gateway_data = ibm_vpc_client.create_public_gateway(**gateway_prototype).get_result()
                 gateway_id = gateway_data['id']
+
+                print(f"\033[92mVPC public gateway {gateway_prototype['name']} been created\033[0m")
 
                 # create subnet
                 subnet_name = '{}-subnet'.format(vpc_name)
@@ -494,34 +513,52 @@ def _select_vpc(ibm_vpc_client, resource_service_client, vpc_id, node_config, re
                 subnet_prototype['vpc'] = {'id': vpc_id}
                 subnet_prototype['ipv4_cidr_block'] = ipv4_cidr_block
 
-#                import pdb;pdb.set_trace()
                 subnet_data = ibm_vpc_client.create_subnet(subnet_prototype).result
                 subnet_id = subnet_data['id']
 
                 # Attach public gateway to the subnet
                 ibm_vpc_client.set_subnet_public_gateway(subnet_id, {'id': gateway_id})
+
+                print(f"\033[92mVPC subnet {subnet_prototype['name']} been created and attached to gateway\033[0m")
+
+                # Update security group to have all required rules
+                sg_id = vpc_obj['default_security_group']['id']
+
+                # update sg name
+                sg_name = '{}-sg'.format(vpc_name)
+                ibm_vpc_client.update_security_group(sg_id, security_group_patch={'name': sg_name})
+
+                # add rule to open tcp traffic inside security group
+                sg_rule_prototype = build_security_group_rule_prototype_model('inbound_tcp_sg', sg_id=sg_id)
+                res = ibm_vpc_client.create_security_group_rule(sg_id, sg_rule_prototype).get_result()
+
+                # add all other required rules
+                for rule in REQUIRED_RULES.keys():
+                    sg_rule_prototype = build_security_group_rule_prototype_model(rule)
+                    if sg_rule_prototype:
+                        res = ibm_vpc_client.create_security_group_rule(sg_id, sg_rule_prototype).get_result()
+
+                print(f"\033[92mSecurity group {sg_name} been updated with required rules\033[0m\n")
+
         else:
             break
 
     vpc_obj = ibm_vpc_client.get_vpc(id=vpc_id).result
-    return vpc_obj, zone_obj
+    return vpc_obj, zone_obj, sg_id
 
 @click.command()
 @click.option('--output-file', '-o', help='Output filename to save configurations')
 @click.option('--input-file', '-i', help=f'Template for new configuration, default: {path.abspath(path.join(__file__ ,"../../etc/gen2-connector/defaults.yaml"))}')
 @click.option('--iam-api-key', required=True, help='IAM_API_KEY')
 @click.option('--region', help='region')
-#@click.option('--zone', help='availability zone name')
 @click.option('--vpc-id', help='vpc id')
 @click.option('--sec-group-id', help='security group id')
-#@click.option('--subnet-id', help='subnet id')
 @click.option('--ssh-key-id', help='ssh key id')
 @click.option('--image-id', help='image id')
 @click.option('--instance-profile-name', help='instance profile name')
 @click.option('--volume-profile-name', default='general-purpose', help='volume profile name')
 @click.option('--head-ip', help='head node floating ip')
 @click.option('--format', type=click.Choice(['lithops', 'ray']), help='if not specified will print plain text')
-#@click.option('--quiet', '-q', is_flag=True, help='minimize interaction with user. if possible make default desicions')
 def builder(output_file, input_file, iam_api_key, region, vpc_id, sec_group_id, ssh_key_id, image_id, instance_profile_name, volume_profile_name, head_ip, format):
     print(f"\n\033[92mWelcome to vpc config export helper\033[0m\n")
 
@@ -551,16 +588,7 @@ def builder(output_file, input_file, iam_api_key, region, vpc_id, sec_group_id, 
     result['region'] = region
     result['endpoint'] = endpoint
 
-    # find availability zone
-#    zones_objects = ibm_vpc_client.list_region_zones(region).get_result()['zones']
-#    zone_obj = None
-#    if not zone:
-#        default = find_default(provider_template, zones_objects, name='zone_name')
-#        zone_obj = get_option_from_list("Choose availability zone", zones_objects, default = default)
-#    else:
-#        zone_obj = next((obj for obj in zones_objects if obj['name'] == zone), None)
-
-    vpc_obj, zone_obj = _select_vpc(ibm_vpc_client, resource_service_client, vpc_id, node_config, region)
+    vpc_obj, zone_obj, sec_group_id = _select_vpc(ibm_vpc_client, resource_service_client, vpc_id, node_config, region)
     if not vpc_obj:
         raise Exception(f'Failed to select VPC')
 
@@ -590,7 +618,7 @@ def builder(output_file, input_file, iam_api_key, region, vpc_id, sec_group_id, 
 
     if not ssh_key_path:
         questions = [
-          inquirer.Text("private_key_path", message=f'Please paste path to \033[92mprivate\033[0m ssh key matching with selected public key {ssh_key_name}', validate=validate_exists, default="~/.ssh/id_rsa")
+          inquirer.Text("private_key_path", message=f'Please paste path to \033[92mprivate\033[0m ssh key associated with selected public key {ssh_key_name}', validate=validate_exists, default="~/.ssh/id_rsa")
         ]
         answers = inquirer.prompt(questions)
         ssh_key_path = os.path.abspath(os.path.expanduser(answers["private_key_path"]))
@@ -677,13 +705,10 @@ def builder(output_file, input_file, iam_api_key, region, vpc_id, sec_group_id, 
                 result['head_ip'] = head_ip_obj['address']
 
     all_subnet_objects = ibm_vpc_client.list_subnets().get_result()['subnets']
-#    import pdb;pdb.set_trace()
+
     #filter only subnets from selected availability zone
     subnet_objects = [s_obj for s_obj in all_subnet_objects if s_obj['zone']['name'] == zone_name and s_obj['vpc']['id'] == vpc_id]
 
-    #lets try to avoid this selection to minimize number of questions
-#    default = find_default(node_config, subnet_objects, id='subnet_id')
-#    subnet_name, subnet_id = find_name_id(subnet_objects, "Choose subnet", obj_id=subnet_id, default=default)
     if not subnet_objects:
         raise f'Failed to find subnet for vpc {vpc_name} in zone {zone_name}'
 
