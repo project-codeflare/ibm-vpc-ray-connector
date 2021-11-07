@@ -2,7 +2,7 @@
 
 > Use of python virtual environment, e.g. [virtualenv](https://virtualenv.pypa.io/en/latest) is greatly encouraged, to avoid installing Python packages globally which could break system tools or other projects
 
-1. Install [Ray](https://github.com/ray-project/ray) release 1.5.1 using `pip install ray[default]==1.5.1`
+1. Install [Ray](https://github.com/ray-project/ray) release 1.8.0 using `pip install ray[default]==1.8.0`
 
 2. Install gen2-connector on your machine
 
@@ -17,31 +17,21 @@ pip install gen2-connector
 
 4. Create cluster config file
 
-    * Use interactive `vpc-config` tool to generate cluster.yaml configuration file
+    * Use interactive `lithopscloud` config tool to generate cluster.yaml configuration file
     ```
-    vpc-config --iam-api-key ${IAM_API_KEY} --format ray --output-file cluster.yaml
+    pip install lithopscloud
+    lithopscloud -o cluster.yaml
     ```
-    
-    * Select security group from previous step when prompted
-
-    * The output of the `vpc-config` is a cluster config yaml file, e.g
-    ```
-    =================================================
-    Cluster config file: /tmp/tmpkf0dztfk.yaml
-    =================================================
-    ```
-
-    * Alternatively, update cluster config manually based on [defaults.yaml](templates/defaults.yaml)
     
 6. Use generated file to bring ray cluster up, e.g
 
-```ray up /tmp/tmpkf0dztfk.yaml```
+```ray up cluster.yaml```
 
 * After finished, find cluster head node and worker nodes ips:
 
 ```
-ray get-head-ip /tmp/tmpkf0dztfk.yaml
-ray get-worker-ips /tmp/tmpkf0dztfk.yaml
+ray get-head-ip cluster.yaml
+ray get-worker-ips cluster.yaml
 ```
 
 * To get status of the cluster
@@ -52,4 +42,4 @@ ray status --address PUBLIC_HEAD_IP:6379
 
 * Use browser to open ray dashboard on PUBLIC_HEAD_IP:8265. Alternatively use `ray dashboard` to forward ray cluster dashboard to your localhost. 
 
-* Submit example task `ray submit /tmp/tmpkf0dztfk.yaml templates/example.py`
+* Submit example task `ray submit cluster.yaml templates/example.py`
