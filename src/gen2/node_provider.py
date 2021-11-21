@@ -31,6 +31,7 @@ from ray.autoscaler.node_provider import NodeProvider
 from ray.autoscaler.tags import TAG_RAY_CLUSTER_NAME, TAG_RAY_NODE_NAME, TAG_RAY_NODE_KIND, TAG_RAY_LAUNCH_CONFIG
 from ray.autoscaler._private.cli_logger import cli_logger
 
+import concurrent.futures as cf
 
 logger = logging.getLogger(__name__)
 
@@ -615,7 +616,8 @@ class Gen2NodeProvider(NodeProvider):
 
             # here will be implementation of reuse of stopped instances
             stopped_nodes_dict = {}
-        
+            futures = []
+
             # Try to reuse previously stopped nodes with compatible configs
             if self.cache_stopped_nodes:
                 stopped_nodes = self._stopped_nodes(tags)
@@ -643,14 +645,23 @@ class Gen2NodeProvider(NodeProvider):
                 count -= len(stopped_nodes_ids)
 
             created_nodes_dict = {}
-            while count > 0:
-                created_nodes_dict = self._create_node(base_config, tags)
+            #breakpoint()
 
-                # due to issues with tagging/searching services lets keep this node in pendings for now
-                for k in created_nodes_dict:
-                    self.pending_nodes[k] = time.time()
-                    count -= 1
+            with cf.ThreadPoolExecutor(count) as ex:
+                futures.append(ex.submit(lambda: self._create_node(base_config, tags)))
 
+            #breakpoint()
+
+            for future in cf.as_completed(futures):
+                try:
+                    created_node = future.result()
+                    created_nodes_dict.update(created_node)
+                    for k in created_nodes_dict:
+                        self.pending_nodes[k] = time.time()
+                except Exception as e:
+                    # if workers policy is strict, raise exception in case failed to create all workers
+                    if self.workers_policy == 'strict':
+                        raise e
 
             all_created_nodes = stopped_nodes_dict
             all_created_nodes.update(created_nodes_dict)
