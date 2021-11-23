@@ -647,7 +647,7 @@ class Gen2NodeProvider(NodeProvider):
             created_nodes_dict = {}
 
             with cf.ThreadPoolExecutor(count) as ex:
-                for i in range count: 
+                for i in range(count): 
                     futures.append(ex.submit(self._create_node, base_config, tags))
 
             for future in cf.as_completed(futures):
