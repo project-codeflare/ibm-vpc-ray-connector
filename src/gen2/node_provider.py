@@ -645,12 +645,10 @@ class Gen2NodeProvider(NodeProvider):
                 count -= len(stopped_nodes_ids)
 
             created_nodes_dict = {}
-            #breakpoint()
 
             with cf.ThreadPoolExecutor(count) as ex:
-                futures.append(ex.submit(lambda: self._create_node(base_config, tags)))
-
-            #breakpoint()
+                for i in range count: 
+                    futures.append(ex.submit(self._create_node, base_config, tags))
 
             for future in cf.as_completed(futures):
                 try:
@@ -668,7 +666,7 @@ class Gen2NodeProvider(NodeProvider):
             return all_created_nodes
 
     def _delete_node(self, resource_id):
-        logger.error(f'in _delete_node with id {resource_id}')
+        logger.info(f'in _delete_node with id {resource_id}')
         try:
             floating_ips = []
 
@@ -690,26 +688,39 @@ class Gen2NodeProvider(NodeProvider):
                 raise e
 
     @log_in_out
-    def terminate_node(self, node_id):  # TODO: implement  terminate_nodes() as well to optimize. use instance group instead of single instance
+    def terminate_nodes(self, node_ids): # TODO: consider to use instance group instead. may also partially resolve the tagging issue
+        logger.info(f'In terminate_nodes with {node_ids}')
+        if not node_ids:
+            return
+
+        futures = []
+        with cf.ThreadPoolExecutor(len(node_ids)) as ex:
+            for node_id in node_ids:
+                logger.info("NodeProvider: "
+                        "{}: Terminating node".format(node_id))
+                futures.append(ex.submit(self.terminate_node, node_id))
+
+        for future in cf.as_completed(futures):
+            future.result()
+
+    @log_in_out
+    def terminate_node(self, node_id):
         """
         Deletes the VM instance and the associated volume
         """
-        logger.debug("Deleting VM instance {}".format(node_id))
+        logger.info("Deleting VM instance {}".format(node_id))
 
-        with self.lock:
-            """
-            Deletes the VM instance and the associated volume
-            """
-            try:
-#                import pdb;pdb.set_trace()
-                if self.cache_stopped_nodes:
-                    cli_logger.print(f"Stopping instance {node_id}. To terminate instead, set `cache_stopped_nodes: False` "
-                                    "under `provider` in the cluster configuration")
+        try:
+            if self.cache_stopped_nodes:
+                cli_logger.print(f"Stopping instance {node_id}. To terminate instead, set `cache_stopped_nodes: False` "
+                                "under `provider` in the cluster configuration")
 
-                    self.ibm_vpc_client.create_instance_action(node_id, 'stop')
-                else:
-                    self._delete_node(node_id)
+                self.ibm_vpc_client.create_instance_action(node_id, 'stop')
+            else:
+                cli_logger.print(f"Terminating instance {node_id}")
+                self._delete_node(node_id)
 
+            with self.lock:
                 self.deleted_nodes.append(node_id)
 
                 # and remove it from all caches
@@ -718,11 +729,11 @@ class Gen2NodeProvider(NodeProvider):
 
                 self.cached_nodes.pop(node_id, None)
                 self.pending_nodes.pop(node_id, None)
-            except ApiException as e:
-                if e.code == 404:
-                    pass
-                else:
-                    raise e
+        except ApiException as e:
+            if e.code == 404:
+                pass
+            else:
+                raise e
 
     def _get_node(self, node_id):
         """Refresh and get info for this node, updating the cache."""
