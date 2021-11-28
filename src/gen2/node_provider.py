@@ -259,7 +259,7 @@ class Gen2NodeProvider(NodeProvider):
                                 f'{node["resource_id"]} is missing ray-node-status in tags: {node["tags"]}, retrying')
                             bad_tags = True
                             break
-                        if HEAD in node['tags']:
+                        if 'ray-node-type:head' in node['tags']:
                             self.prev_nodes[HEAD].add(node["resource_id"])
                         else:
                             self.prev_nodes[query].add(node["resource_id"])
@@ -305,13 +305,13 @@ class Gen2NodeProvider(NodeProvider):
     def is_running(self, node_id):
         with self.lock:
             node = self._get_cached_node(node_id)
-            return node['status'] == 'running'
+            return node['doc']['status'] == 'running'
 
     @log_in_out
     def is_terminated(self, node_id):
         with self.lock:
             node = self._get_cached_node(node_id)
-            state = node['status']
+            state = node['doc']['status']
             return state not in ["running", "starting", "pending"]
 
     def _tags_to_dict(self, node):
@@ -376,14 +376,14 @@ class Gen2NodeProvider(NodeProvider):
         node = self._get_cached_node(node_id)
 
         try:
-            primary_ipv4_address = node['network_interfaces'][0].get(
+            primary_ipv4_address = node['doc']['network_interfaces'][0].get(
                 'primary_ipv4_address')
             if primary_ipv4_address is None:
                 node = self._get_node(node_id)
         except Exception:
             node = self._get_node(node_id)
 
-        return node['network_interfaces'][0].get('primary_ipv4_address')
+        return node['doc']['network_interfaces'][0].get('primary_ipv4_address')
 
     def _global_tagging_with_retries(self, resource_crn, f_name, tags=None):
         e = None
@@ -671,6 +671,9 @@ class Gen2NodeProvider(NodeProvider):
             self._attach_floating_ip(instance, fip_data)
 
         self._wait_running(instance['id'])
+
+        tags[TAG_RAY_CLUSTER_NAME] = self.cluster_name
+
         new_tags = [f"{k}:{v}" for k, v in tags.items()]
         if not self._global_tagging_with_retries(instance['crn'], 'attach_tag', tags=new_tags):
             cli_logger.error(
