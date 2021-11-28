@@ -671,13 +671,14 @@ class Gen2NodeProvider(NodeProvider):
             self._attach_floating_ip(instance, fip_data)
 
         self._wait_running(instance['id'])
-        if not self._global_tagging_with_retries(instance['crn'], 'attach_tag', tags=tags):
+        new_tags = [f"{k}:{v}" for k, v in tags.items()]
+        if not self._global_tagging_with_retries(instance['crn'], 'attach_tag', tags=new_tags):
             cli_logger.error(
-                f"failed to tag node {instance['id']} with tags {tags}, raising error")
+                f"failed to tag node {instance['id']} with tags {new_tags}, raising error")
             raise
 
         logger.info("===========================")
-        logger.info(f"attached {tags}")
+        logger.info(f"attached {new_tags}")
         logger.info("===========================")
 
         return {instance['id']: instance}
