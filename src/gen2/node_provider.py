@@ -131,6 +131,10 @@ class Gen2NodeProvider(NodeProvider):
     @log_in_out
     @retry_on_except
     def non_terminated_nodes(self, tag_filters):
+        logger.info(f'---------------------------------------in non_terminated_nodes')
+        logger.info(f'TAG_FILTERS: {tag_filters}')
+        logger.info(f'---------------------------------------')
+
         # get all nodes tagged for cluster "query":"tags:\"ray-cluster-name:default\" AND tags:\"ray-node-type:head\""
         CLUSTER_NAME_QUERY = f"tags:\"{TAG_RAY_CLUSTER_NAME}:{self.cluster_name}\""
         query = CLUSTER_NAME_QUERY
@@ -651,15 +655,10 @@ class Gen2NodeProvider(NodeProvider):
                     futures.append(ex.submit(self._create_node, base_config, tags))
 
             for future in cf.as_completed(futures):
-                try:
-                    created_node = future.result()
-                    created_nodes_dict.update(created_node)
-                    for k in created_nodes_dict:
-                        self.pending_nodes[k] = time.time()
-                except Exception as e:
-                    # if workers policy is strict, raise exception in case failed to create all workers
-                    if self.workers_policy == 'strict':
-                        raise e
+                created_node = future.result()
+                created_nodes_dict.update(created_node)
+                for k in created_nodes_dict:
+                    self.pending_nodes[k] = time.time()
 
             all_created_nodes = stopped_nodes_dict
             all_created_nodes.update(created_nodes_dict)
