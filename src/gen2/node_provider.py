@@ -477,7 +477,7 @@ class Gen2NodeProvider(NodeProvider):
         }
 
         boot_volume_profile = {
-            'capacity': base_config.get('boot_volume_capacity', 100),
+#            'capacity': base_config.get('boot_volume_capacity', 100),
             'name': '{}-boot'.format(name),
             'profile': {'name': base_config.get('volume_tier_name', VOLUME_TIER_NAME_DEFAULT)}}
 
