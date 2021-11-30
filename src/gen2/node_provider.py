@@ -477,7 +477,7 @@ class Gen2NodeProvider(NodeProvider):
         }
 
         boot_volume_profile = {
-            'capacity': 100,
+            'capacity': base_config.get('boot_volume_capacity', 100),
             'name': '{}-boot'.format(name),
             'profile': {'name': base_config.get('volume_tier_name', VOLUME_TIER_NAME_DEFAULT)}}
 
@@ -496,6 +496,7 @@ class Gen2NodeProvider(NodeProvider):
         instance_prototype['resource_group'] = {'id': base_config['resource_group_id']}
         instance_prototype['vpc'] = {'id': base_config['vpc_id']}
         instance_prototype['image'] = {'id': base_config['image_id']}
+
         instance_prototype['zone'] = {'name': self.provider_config['zone_name']}
         instance_prototype['boot_volume_attachment'] = boot_volume_attachment
         instance_prototype['primary_network_interface'] = primary_network_interface
