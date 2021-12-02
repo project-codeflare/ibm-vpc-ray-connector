@@ -14,31 +14,29 @@
 # limitations under the License.
 #
 
+import concurrent.futures as cf
 import inspect
-
 import logging
-import time
-from uuid import uuid4
-
 import re
 import threading
+import time
+from uuid import uuid4
 
 from ibm_cloud_sdk_core import ApiException
 from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
 from ibm_platform_services import GlobalSearchV2, GlobalTaggingV1
 from ibm_vpc import VpcV1
-from ray.autoscaler.node_provider import NodeProvider
-from ray.autoscaler.tags import TAG_RAY_CLUSTER_NAME, TAG_RAY_NODE_NAME, TAG_RAY_NODE_KIND, TAG_RAY_LAUNCH_CONFIG
 from ray.autoscaler._private.cli_logger import cli_logger
-
-import concurrent.futures as cf
+from ray.autoscaler.node_provider import NodeProvider
+from ray.autoscaler.tags import (TAG_RAY_CLUSTER_NAME, TAG_RAY_LAUNCH_CONFIG,
+                                 TAG_RAY_NODE_KIND, TAG_RAY_NODE_NAME)
 
 logger = logging.getLogger(__name__)
 
 INSTANCE_NAME_UUID_LEN = 8
 INSTANCE_NAME_MAX_LEN = 64
 
-#TODO: move to constants
+# TODO: move to constants
 PROFILE_NAME_DEFAULT = 'cx2-2x4'
 VOLUME_TIER_NAME_DEFAULT = 'general-purpose'
 RAY_RECYCLABLE = 'ray-recyclable'
@@ -46,7 +44,6 @@ RAY_RECYCLABLE = 'ray-recyclable'
 ALL_STATUS_TAGS = ['ray-node-status:uninitialized', 'ray-node-status:waiting-for-ssh', 'ray-node-status:setting-up',
                    'ray-node-status:syncing-files', 'ray-node-status:up-to-date', 'ray-node-status:update-failed']
 RETRIES = 10
-
 WORKER = 'worker'
 HEAD = 'head'
 
@@ -76,29 +73,31 @@ class Gen2NodeProvider(NodeProvider):
                     cli_logger.error(msg)
                     logger.exception(msg)
 
-                    logger.info("reiniting clients and waiting few seconds")
+                    logger.debug("reiniting clients and waiting few seconds")
                     args[0]._init()
                     time.sleep(1)
 
-            # we got here only because run out of retries, TODO: consider to return default empty instead of raising. raising may kill monitor
+            # we got here only because run out of retries
+            # TODO: consider to return default empty instead of raising. raising may kill monitor
             raise e
         return decorated_func
 
+    # TODO: To be removed, needed for debugging purposes only
     def log_in_out(func):
 
-      def decorated_func(*args, **kwargs):
-        name = func.__name__
-        logger.info(
-            f"Enter {name} from {inspect.stack()[0][3]} {inspect.stack()[1][3]}  {inspect.stack()[2][3]} with args: {args} and kwargs {kwargs}")
-        try:
-            result = func(*args, **kwargs)
-            logger.info(
-                f"Leave {name} from {inspect.stack()[1][3]} with result {result}, entered with args: {args}")
-        except:
-            cli_logger.error(f"Error in {name}")
-            raise
-        return result
-      return decorated_func
+        def decorated_func(*args, **kwargs):
+            name = func.__name__
+            logger.debug(
+                f"Enter {name} from {inspect.stack()[0][3]} {inspect.stack()[1][3]}  {inspect.stack()[2][3]} with args: {args} and kwargs {kwargs}")
+            try:
+                result = func(*args, **kwargs)
+                logger.debug(
+                    f"Leave {name} from {inspect.stack()[1][3]} with result {result}, entered with args: {args}")
+            except:
+                cli_logger.error(f"Error in {name}")
+                raise
+            return result
+        return decorated_func
 
     @log_in_out
     def _init(self):
@@ -146,12 +145,12 @@ class Gen2NodeProvider(NodeProvider):
 
         with self.lock:
             # retry search few times in case node misteriously dissapeared
-            logger.info(f'in non_terminated_nodes')
+            logger.debug(f'in non_terminated_nodes')
             NT_RETRIES = 20
             missing_nodes = []
             retry = 0
             while retry < NT_RETRIES:
-                retry > 0 and logger.info(
+                retry > 0 and logger.debug(
                     f'nt_retry #{retry}, self.global_search_service.search with query {query}')
                 retry += 1
                 result = self.global_search_service.search(
@@ -171,14 +170,13 @@ class Gen2NodeProvider(NodeProvider):
 
                     # TODO: should be special case here in case of cache_stopped_nodes?
                     if node['doc']['status'] not in ['pending', 'starting', 'running']:
-                        logger.info(
+                        logger.debug(
                             f"{node['resource_id']} status {node['doc']['status']} not in ['pending', 'starting', 'running'], skipping")
                         continue
 
                     instance_id = node['resource_id']
                     try:
-                        logger.info(f"getting instance {instance_id}")
-                        # this one needed to filter out zombie resources
+                        # this one is needed to filter out zombie resources
                         self.ibm_vpc_client.get_instance(instance_id)
                     except Exception as e:
                         cli_logger.warning(instance_id)
@@ -208,7 +206,7 @@ class Gen2NodeProvider(NodeProvider):
 
                 found_nodes = {node["resource_id"]: node for node in nodes}
 
-                # check if no worker disappeared
+                # TODO: remove all the tag search retries once tagging issue resolved
                 prev_nodes_keys = []
 
                 # we manage a single set of HEAD node
@@ -222,22 +220,18 @@ class Gen2NodeProvider(NodeProvider):
                         self.prev_nodes[query] = prev_nodes_keys
 
                 # check if previously cached node present in the list of found nodes
-#                logger.info(f'prev_nodes_keys {prev_nodes_keys} vs found_nodes {found_nodes.keys()}')
-
-                # check that found set matches previous set
                 if prev_nodes_keys - found_nodes.keys():
 
                     # TODO: bug in ray when called to refresh head ip with wrong unintialized tags after head node already created
                     if "ray-node-status:uninitialized" in query and "ray-node-type:head" in query:
                         break
 
-                    # nodes shouldn't dissapear too frequently, if happened most likely it is a glitch in search, retry
-#                    import pdb;pdb.set_trace()
+                    # nodes shouldn't dissapear too frequently. if happened, most likely it is a glitch in search, retry
                     # save currently missing nodes
                     if missing_nodes and sorted(prev_nodes_keys - found_nodes.keys()) != missing_nodes:
-                        logger.info(
+                        logger.debug(
                             f'missing nodes detected in previous retry don\'t match currently missing nodes')
-                        # there a chance for infinite loop here?
+                        # TODO: Is there a chance for infinite loop here?
                         retry = 0
 
                     missing_nodes = sorted(
@@ -248,8 +242,7 @@ class Gen2NodeProvider(NodeProvider):
                     time.sleep(3)
                     continue
                 else:
-                    logger.info(
-                        "found nodes not missing any perviously cached nodes")
+                    logger.debug("found nodes not missing any perviously cached nodes")
                     missing_nodes = []
 
                     bad_tags = False
@@ -280,25 +273,6 @@ class Gen2NodeProvider(NodeProvider):
 
             node_ids = [node["resource_id"] for node in nodes]
 
-            # workaround for issues woth tagging/searching
-            # for pend_id in list(self.pending_nodes.keys()):
-            #     if pend_id in found_nodes:
-            #         if found_nodes[pend_id]['doc']['status'] == 'running':
-            #             #the instance seems to be running, lets remove it from pendings
-            #             self.pending_nodes.pop(pend_id, None)
-            #     else:
-            #         # if instance in pendings for more than PENDING_TIMEOUT it is time to delete it
-            #         PENDING_TIMEOUT = 120
-            #         pending_time = self.pending_nodes[pend_id] - time.time()
-            #         logger.info(f'the instance {pend_id} is in pendings list for {pending_time}')
-            #         if pending_time > PENDING_TIMEOUT:
-            #             logger.error(f'pending timeout {PENDING_TIMEOUT} reached, deleting instance {pend_id}')
-            #             self._delete_node(pend_id)
-            #             self.pending_nodes.pop(pend_id)
-            #         elif pend_id not in node_ids:
-            #             node_ids.append(pend_id)
-            logger.info(f'returning from non_terminated_nodes')
-
         return node_ids
 
     @log_in_out
@@ -316,7 +290,6 @@ class Gen2NodeProvider(NodeProvider):
 
     def _tags_to_dict(self, node):
         tags_dict = {}
-        #logger.info(f'in _tags_to_dict with {tags_list}')
         if self.cluster_name in node['name']:
             tags_dict[TAG_RAY_CLUSTER_NAME] = self.cluster_name
 
@@ -329,7 +302,6 @@ class Gen2NodeProvider(NodeProvider):
 
             for tag in node['tags']:
                 _tags_split = tag.split(':')
-    #            logger.info(f'in _tags_to_dict - {_tags_split}')
                 tags_dict[_tags_split[0]] = _tags_split[1]
 
         return tags_dict
@@ -389,7 +361,8 @@ class Gen2NodeProvider(NodeProvider):
         e = None
         resource_model = {'resource_id': resource_crn}
         for retry in range(RETRIES):
-            logger.info(f'retry #{retry} to {f_name} {resource_crn}')
+            if retry > 0:
+                logger.info(f'retry #{retry} to {f_name} {resource_crn}')
             try:
                 if f_name == 'attach_tag':
                     tag_results = self.global_tagging_service.attach_tag(
@@ -397,13 +370,11 @@ class Gen2NodeProvider(NodeProvider):
                         tag_names=tags,
                         tag_type='user').get_result()
                     if not tag_results['results'][0]['is_error']:
-                        logger.info(f'validate tags {tags} really attached')
                         node_tags = [t['name'] for t in self._global_tagging_with_retries(
                             resource_crn, 'list_tags')]
 
-                        logger.info(f'instance current tags {node_tags}')
                         if set(tags) - set(node_tags):
-                            logger.info(
+                            logger.warning(
                                 f'instance {resource_crn} missing attached tags {set(tags) - set(node_tags)}, retrying')
                             continue
                         else:
@@ -411,33 +382,28 @@ class Gen2NodeProvider(NodeProvider):
                 elif f_name == 'list_tags':
                     return self.global_tagging_service.list_tags(attached_to=resource_crn).get_result()['items']
                 else:
-                    #detach
+                    # detach
                     tag_results = self.global_tagging_service.detach_tag(
                         resources=[resource_model],
                         tag_names=tags,
                         tag_type='user').get_result()
                     if not tag_results['results'][0]['is_error']:
-                        logger.info(f'validate tags {tags} really dettached')
                         node_tags = [t['name'] for t in self._global_tagging_with_retries(
                             resource_crn, 'list_tags')]
 
-                        logger.info(f'instance current tags {node_tags}')
                         if set(node_tags) & set(tags):
-                            logger.info(
+                            logger.warning(
                                 f'instance {resource_crn} still having dettached tags {set(node_tags) & set(tags)}, retrying')
                         else:
                             return tag_results
 
-                logger.error(
-                    f"failed to {f_name} tags {tags} for {resource_model}, {tag_results}")
+                logger.error(f"failed to {f_name} tags {tags} for {resource_model}, {tag_results}")
             except Exception as e:
-                logger.error(
-                    f"Failed to {f_name} {tags} for {resource_model}, {e}")
+                logger.error(f"Failed to {f_name} {tags} for {resource_model}, {e}")
 
             if retry == RETRIES / 2:
                 # try to reinit client
-                self.global_tagging_service = GlobalTaggingV1(
-                    IAMAuthenticator(self.iam_api_key))
+                self.global_tagging_service = GlobalTaggingV1(IAMAuthenticator(self.iam_api_key))
 
             time.sleep(5)
 
@@ -462,26 +428,20 @@ class Gen2NodeProvider(NodeProvider):
                     f"failed to tag node {node_id} with tags {new_tags}, raising error")
                 raise
 
-            logger.info("===========================")
-            logger.info(f"attached {new_tags}")
-            logger.info("===========================")
+            logger.debug(f"attached {new_tags}")
 
             # 3. check that status is been updated and detach old statuses
             if 'ray-node-status' in tags.keys():
                 tags_to_detach = ALL_STATUS_TAGS.copy()
                 # remove updated status from tags_to_detach
-                tags_to_detach.remove(
-                    f"ray-node-status:{tags['ray-node-status']}")
+                tags_to_detach.remove(f"ray-node-status:{tags['ray-node-status']}")
 
                 # detach any status tags not appearing in new tags
                 if not self._global_tagging_with_retries(resource_crn, 'detach_tag', tags=tags_to_detach):
                     logger.error("failed to detach old status tags")
                     raise
 
-                logger.info("===========================")
-                logger.info(f"detached {tags_to_detach}")
-                logger.info("===========================")
-
+                logger.debug(f"detached {tags_to_detach}")
                 time.sleep(1)
 
             return {}
@@ -490,8 +450,7 @@ class Gen2NodeProvider(NodeProvider):
         """
         Returns the instance information
         """
-        instances_data = self.ibm_vpc_client.list_instances(
-            name=name).get_result()
+        instances_data = self.ibm_vpc_client.list_instances(name=name).get_result()
         if len(instances_data['instances']) > 0:
             return instances_data['instances'][0]
         return None
@@ -504,8 +463,7 @@ class Gen2NodeProvider(NodeProvider):
         """
         logger.debug("Creating new VM instance {}".format(name))
 
-        security_group_identity_model = {
-            'id': base_config['security_group_id']}
+        security_group_identity_model = {'id': base_config['security_group_id']}
         subnet_identity_model = {'id': base_config['subnet_id']}
         primary_network_interface = {
             'name': 'eth0',
@@ -524,19 +482,16 @@ class Gen2NodeProvider(NodeProvider):
         }
 
         key_identity_model = {'id': base_config['key_id']}
-        profile_name = base_config.get(
-            'instance_profile_name', PROFILE_NAME_DEFAULT)
+        profile_name = base_config.get('instance_profile_name', PROFILE_NAME_DEFAULT)
 
         instance_prototype = {}
         instance_prototype['name'] = name
         instance_prototype['keys'] = [key_identity_model]
         instance_prototype['profile'] = {'name': profile_name}
-        instance_prototype['resource_group'] = {
-            'id': base_config['resource_group_id']}
+        instance_prototype['resource_group'] = {'id': base_config['resource_group_id']}
         instance_prototype['vpc'] = {'id': base_config['vpc_id']}
         instance_prototype['image'] = {'id': base_config['image_id']}
-        instance_prototype['zone'] = {
-            'name': self.provider_config['zone_name']}
+        instance_prototype['zone'] = {'name': self.provider_config['zone_name']}
         instance_prototype['boot_volume_attachment'] = boot_volume_attachment
         instance_prototype['primary_network_interface'] = primary_network_interface
 
@@ -631,7 +586,7 @@ class Gen2NodeProvider(NodeProvider):
                 except Exception as e:
                     cli_logger.warning(instance_id)
                     if e.message == 'Instance not found':
-                       continue
+                        continue
                     raise e
             return nodes
 
@@ -647,8 +602,7 @@ class Gen2NodeProvider(NodeProvider):
             instance = self.ibm_vpc_client.get_instance(instance_id).result
 
             if time.time() - start > PENDING_TIMEOUT:
-                logger.error(
-                    f'pending timeout {PENDING_TIMEOUT} reached, deleting instance {instance_id}')
+                logger.error(f'pending timeout {PENDING_TIMEOUT} reached, deleting instance {instance_id}')
                 self._delete_node(instance_id)
                 raise Exception(
                     f'Instance {instance_id} been hanging in pending state too long, deleting')
@@ -662,7 +616,7 @@ class Gen2NodeProvider(NodeProvider):
         name = "{name_tag}-{uuid}".format(
             name_tag=name_tag,
             uuid=uuid4().hex[:INSTANCE_NAME_UUID_LEN])
-        logger.info(f"self._create_instance with {name}")
+
         instance = self._create_instance(name, base_config)
 
         # currently always creating public ip for head node
@@ -680,9 +634,7 @@ class Gen2NodeProvider(NodeProvider):
                 f"failed to tag node {instance['id']} with tags {new_tags}, raising error")
             raise
 
-        logger.info("===========================")
-        logger.info(f"attached {new_tags}")
-        logger.info("===========================")
+        logger.debug(f"attached {new_tags}")
 
         return {instance['id']: instance}
 
@@ -698,8 +650,7 @@ class Gen2NodeProvider(NodeProvider):
             if self.cache_stopped_nodes:
                 stopped_nodes = self._stopped_nodes(tags)
                 stopped_nodes_ids = [n['resource_id'] for n in stopped_nodes]
-                stopped_nodes_dict = {
-                    n['resource_id']: n for n in stopped_nodes}
+                stopped_nodes_dict = {n['resource_id']: n for n in stopped_nodes}
 
                 if stopped_nodes:
                     cli_logger.print(f"Reusing nodes {stopped_nodes_ids}. "
@@ -708,11 +659,7 @@ class Gen2NodeProvider(NodeProvider):
 
                 for node in stopped_nodes:
                     logger.info(f"Starting instance {node['resource_id']}")
-                    self.ibm_vpc_client.create_instance_action(
-                        node['resource_id'], 'start')
-
-                    # due to issues with tagging/searching services lets keep this node in pendings for now
-                    # self.pending_nodes[node['resource_id']] = time.time()
+                    self.ibm_vpc_client.create_instance_action(node['resource_id'], 'start')
 
                 time.sleep(1)
 
@@ -742,7 +689,7 @@ class Gen2NodeProvider(NodeProvider):
             return all_created_nodes
 
     def _delete_node(self, resource_id):
-        logger.info(f'in _delete_node with id {resource_id}')
+        logger.debug(f'in _delete_node with id {resource_id}')
         try:
             floating_ips = []
 
@@ -756,8 +703,7 @@ class Gen2NodeProvider(NodeProvider):
 
             for ip in floating_ips:
                 # TODO: replace prefix with tags
-                if ip['name'].startswith(RAY_RECYCLABLE):
-                    self.ibm_vpc_client.delete_floating_ip(ip['id'])
+                if ip['name'].startswith(RAY_RECYCLABLE):self.ibm_vpc_client.delete_floating_ip(ip['id'])
         except ApiException as e:
             if e.code == 404:
                 pass
@@ -765,17 +711,14 @@ class Gen2NodeProvider(NodeProvider):
                 raise e
 
     @log_in_out
-    # TODO: consider to use instance group instead. may also partially resolve the tagging issue
     def terminate_nodes(self, node_ids):
-        logger.info(f'In terminate_nodes with {node_ids}')
         if not node_ids:
             return
 
         futures = []
         with cf.ThreadPoolExecutor(len(node_ids)) as ex:
             for node_id in node_ids:
-                logger.info("NodeProvider: "
-                            "{}: Terminating node".format(node_id))
+                logger.info("NodeProvider: {}: Terminating node".format(node_id))
                 futures.append(ex.submit(self.terminate_node, node_id))
 
         for future in cf.as_completed(futures):
@@ -827,8 +770,7 @@ class Gen2NodeProvider(NodeProvider):
                 logger.error(f'failed to get instance with id {node_id}')
                 raise e
             try:
-                node_tags = self._global_tagging_with_retries(
-                    node['crn'], 'list_tags')
+                node_tags = self._global_tagging_with_retries(node['crn'], 'list_tags')
             except Exception as e:
                 logger.error(f'Error listing tags for node {node}: {e}')
                 raise e
