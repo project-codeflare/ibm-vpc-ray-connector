@@ -137,6 +137,10 @@ class Gen2NodeProvider(NodeProvider):
     @log_in_out
     @retry_on_except
     def non_terminated_nodes(self, tag_filters):
+        logger.info(f'---------------------------------------in non_terminated_nodes')
+        logger.info(f'TAG_FILTERS: {tag_filters}')
+        logger.info(f'---------------------------------------')
+
         # get all nodes tagged for cluster "query":"tags:\"ray-cluster-name:default\" AND tags:\"ray-node-type:head\""
         CLUSTER_NAME_QUERY = f"tags:\"{TAG_RAY_CLUSTER_NAME}:{self.cluster_name}\""
         query = CLUSTER_NAME_QUERY
@@ -472,7 +476,7 @@ class Gen2NodeProvider(NodeProvider):
         }
 
         boot_volume_profile = {
-            'capacity': 100,
+            'capacity': base_config.get('boot_volume_capacity', 100),
             'name': '{}-boot'.format(name),
             'profile': {'name': base_config.get('volume_tier_name', VOLUME_TIER_NAME_DEFAULT)}}
 
@@ -491,6 +495,7 @@ class Gen2NodeProvider(NodeProvider):
         instance_prototype['resource_group'] = {'id': base_config['resource_group_id']}
         instance_prototype['vpc'] = {'id': base_config['vpc_id']}
         instance_prototype['image'] = {'id': base_config['image_id']}
+
         instance_prototype['zone'] = {'name': self.provider_config['zone_name']}
         instance_prototype['boot_volume_attachment'] = boot_volume_attachment
         instance_prototype['primary_network_interface'] = primary_network_interface
@@ -676,13 +681,8 @@ class Gen2NodeProvider(NodeProvider):
                         ex.submit(self._create_node, base_config, tags))
 
             for future in cf.as_completed(futures):
-                try:
-                    created_node = future.result()
-                    created_nodes_dict.update(created_node)
-                    # for k in created_nodes_dict:
-                    #     self.pending_nodes[k] = time.time()
-                except Exception as e:
-                    logging.error(f'create_node finished with exception {e}')
+                created_node = future.result()
+                created_nodes_dict.update(created_node)
 
             all_created_nodes = stopped_nodes_dict
             all_created_nodes.update(created_nodes_dict)
