@@ -251,11 +251,11 @@ class Gen2NodeProvider(NodeProvider):
 
                     bad_tags = False
                     for node in nodes:
-                        if not any("ray-node-status" in t for t in node['tags']):
-                            logger.warning(
-                                f'{node["resource_id"]} is missing ray-node-status in tags: {node["tags"]}, retrying')
-                            bad_tags = True
-                            break
+#                        if not any("ray-node-status" in t for t in node['tags']):
+#                            logger.warning(
+#                                f'{node["resource_id"]} is missing ray-node-status in tags: {node["tags"]}, retrying')
+#                            bad_tags = True
+#                            break
                         if 'ray-node-type:head' in node['tags']:
                             self.prev_nodes[HEAD].add(node["resource_id"])
                         else:
