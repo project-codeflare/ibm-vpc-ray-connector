@@ -228,7 +228,6 @@ class Gen2NodeProvider(NodeProvider):
     Returns ids of non terminated nodes
     """
     @log_in_out
-    @retry_on_except
     def non_terminated_nodes(self, tag_filters):
 
         nodes = []
@@ -299,8 +298,11 @@ class Gen2NodeProvider(NodeProvider):
     @log_in_out
     def is_terminated(self, node_id):
         with self.lock:
-            node = self._get_cached_node(node_id)
-            return node["status"] not in ["running", "starting", "pending"]
+            try:
+                node = self._get_cached_node(node_id)
+                return node["status"] not in ["running", "starting", "pending"]
+            except Exception as e:
+                return True
 
     @log_in_out
     def node_tags(self, node_id):
