@@ -154,9 +154,17 @@ class Gen2NodeProvider(NodeProvider):
                             f"cached instance {instance_id} not found, \
                                 will be removed from cache")                 
             self.set_node_tags(None, None)
+        else:
+            # check if the current node is a head node
+            logger.info(f'ENV: {os.environ}')
 
     def __init__(self, provider_config, cluster_name):
         NodeProvider.__init__(self, provider_config, cluster_name)
+
+        logger = logging.getLogger()
+        logger.setLevel(logging.DEBUG)
+        for handler in logger.handlers:
+            handler.setLevel(logging.DEBUG)
 
         loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
         for logger in loggers:
