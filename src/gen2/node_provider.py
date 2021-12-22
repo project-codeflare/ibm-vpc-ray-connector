@@ -158,6 +158,10 @@ class Gen2NodeProvider(NodeProvider):
     def __init__(self, provider_config, cluster_name):
         NodeProvider.__init__(self, provider_config, cluster_name)
 
+        loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
+        for logger in loggers:
+            logger.setLevel(logging.DEBUG)
+
         self.lock = threading.RLock()
 
         self.endpoint = self.provider_config["endpoint"]
