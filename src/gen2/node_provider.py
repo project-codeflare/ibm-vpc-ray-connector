@@ -636,7 +636,8 @@ class Gen2NodeProvider(NodeProvider):
             for node_id in stopped_nodes_ids:
                 self.set_node_tags(node_id, tags)
                 with self.lock:
-                    self.deleted_nodes.remove(node_id)
+                    if node_id in self.deleted_nodes:
+                        self.deleted_nodes.remove(node_id)
 
             count -= len(stopped_nodes_ids)
 
