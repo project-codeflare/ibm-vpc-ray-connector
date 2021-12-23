@@ -168,8 +168,6 @@ class Gen2NodeProvider(NodeProvider):
                     name=name).get_result()
                 if node:
                     logger.info(f'{name} is node in vpc')
-                    import json
-                    from pathlib import Path
                     from ray.autoscaler._private.util import ConcurrentCounter, validate_config, with_head_node_ip, hash_launch_conf, hash_runtime_conf, format_info_string
 
                     ray_bootstrap_config = Path(Path.home(), Path('ray_bootstrap_config.yaml'))
