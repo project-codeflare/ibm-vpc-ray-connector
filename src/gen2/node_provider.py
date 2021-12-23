@@ -644,14 +644,15 @@ class Gen2NodeProvider(NodeProvider):
         created_nodes_dict = {}
 
         # create multiple instances concurrently
-        with cf.ThreadPoolExecutor(count) as ex:
-            for i in range(count):
-                futures.append(
-                    ex.submit(self._create_node, base_config, tags))
+        if count:
+            with cf.ThreadPoolExecutor(count) as ex:
+                for i in range(count):
+                    futures.append(
+                        ex.submit(self._create_node, base_config, tags))
 
-        for future in cf.as_completed(futures):
-            created_node = future.result()
-            created_nodes_dict.update(created_node)
+            for future in cf.as_completed(futures):
+                created_node = future.result()
+                created_nodes_dict.update(created_node)
 
         all_created_nodes = stopped_nodes_dict
         all_created_nodes.update(created_nodes_dict)
