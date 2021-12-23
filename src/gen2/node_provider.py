@@ -165,9 +165,9 @@ class Gen2NodeProvider(NodeProvider):
                 
                 logger.info(f'{name} is HEAD')
                 node = self.ibm_vpc_client.list_instances(
-                    name=name).get_result()
+                    name=name).get_result()['instances']
                 if node:
-                    logger.info(f'{name} is node in vpc')
+                    logger.info(f'{name} is node {node} in vpc')
                     from ray.autoscaler._private.util import ConcurrentCounter, validate_config, with_head_node_ip, hash_launch_conf, hash_runtime_conf, format_info_string
 
                     ray_bootstrap_config = Path(Path.home(), Path('ray_bootstrap_config.yaml'))
@@ -185,7 +185,7 @@ class Gen2NodeProvider(NodeProvider):
                     }
 
                     logger.info(f'Setting HEAD node tags {head_tags}')
-                    self.set_node_tags(node['id'], head_tags)
+                    self.set_node_tags(node[0]['id'], head_tags)
 
 
     def __init__(self, provider_config, cluster_name):
