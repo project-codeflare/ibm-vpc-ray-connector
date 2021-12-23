@@ -33,6 +33,7 @@ from ray.autoscaler._private.cli_logger import cli_logger
 from ray.autoscaler.node_provider import NodeProvider
 from ray.autoscaler.tags import (TAG_RAY_CLUSTER_NAME, NODE_KIND_HEAD,
                     NODE_KIND_WORKER, TAG_RAY_NODE_KIND, TAG_RAY_NODE_NAME)
+from ray.autoscaler._private.util import hash_runtime_conf
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +141,8 @@ class Gen2NodeProvider(NodeProvider):
 
         self.tags_file = Path(ray_cache, Path('tags.json'))
         if self.tags_file.is_file():
-            tags = json.loads(self.tags_file.read_text())
+            all_tags = json.loads(self.tags_file.read_text())
+            tags = all_tags.get(self.cluster_name, {})
 
             for instance_id, instance_tags in tags.items():
                 try:
@@ -157,7 +159,6 @@ class Gen2NodeProvider(NodeProvider):
             self.set_node_tags(None, None)
         else:
             # check if the current node is a head node
-            logger.info(f'ENV: {os.environ}')
             name = socket.gethostname()
 
             logger.info(f'Check if {name} is HEAD')
@@ -168,7 +169,6 @@ class Gen2NodeProvider(NodeProvider):
                     name=name).get_result()['instances']
                 if node:
                     logger.info(f'{name} is node {node} in vpc')
-                    from ray.autoscaler._private.util import ConcurrentCounter, validate_config, with_head_node_ip, hash_launch_conf, hash_runtime_conf, format_info_string
 
                     ray_bootstrap_config = Path(Path.home(), Path('ray_bootstrap_config.yaml'))
                     config = json.loads(ray_bootstrap_config.read_text())
@@ -419,7 +419,14 @@ class Gen2NodeProvider(NodeProvider):
                 node_cache.update(tags)
 
             # dump inmemory cache to file
-            self.tags_file.write_text(json.dumps(self.nodes_tags))
+            ray_cache = Path(Path.home(), Path('.ray'))
+            self.tags_file = Path(ray_cache, Path('tags.json'))
+
+            all_tags = {}
+            if self.tags_file.is_file():
+                all_tags = json.loads(self.tags_file.read_text())
+            all_tags[self.cluster_name] = self.nodes_tags
+            self.tags_file.write_text(json.dumps(all_tags))
 
     def _get_instance_data(self, name):
         """
