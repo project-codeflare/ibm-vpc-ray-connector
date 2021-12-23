@@ -284,11 +284,9 @@ class Gen2NodeProvider(NodeProvider):
 
         nodes = []
 
-        with self.lock:
+        found_nodes = self._get_nodes_by_tags(tag_filters)
 
-            found_nodes = self._get_nodes_by_tags(tag_filters)
-
-            for node in found_nodes:
+        for node in found_nodes:
 
                 # check if node scheduled for delete
                 with self.lock:
