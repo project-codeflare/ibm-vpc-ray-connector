@@ -24,7 +24,7 @@ import threading
 import time
 from uuid import uuid4
 from pathlib import Path
-
+import socket
 
 from ibm_cloud_sdk_core import ApiException
 from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
@@ -158,10 +158,45 @@ class Gen2NodeProvider(NodeProvider):
         else:
             # check if the current node is a head node
             logger.info(f'ENV: {os.environ}')
+            name = socket.gethostname()
+
+            logger.info(f'Check if {name} is HEAD')
+            if self._get_node_type(name) == NODE_KIND_HEAD:
+                
+                logger.info(f'{name} is HEAD')
+                node = self.ibm_vpc_client.list_instances(
+                    name=name).get_result()
+                if node:
+                    logger.info(f'{name} is node in vpc')
+                    import json
+                    from pathlib import Path
+                    from ray.autoscaler._private.util import ConcurrentCounter, validate_config, with_head_node_ip, hash_launch_conf, hash_runtime_conf, format_info_string
+
+                    ray_bootstrap_config = Path(Path.home(), Path('ray_bootstrap_config.yaml'))
+                    config = json.loads(ray_bootstrap_config.read_text())
+                    (runtime_hash, file_mounts_contents_hash) = hash_runtime_conf(config["file_mounts"], None, config)
+
+                    head_tags = {
+                        TAG_RAY_NODE_KIND: NODE_KIND_HEAD,
+                        "ray-node-name": name,
+                        "ray-node-status": "up-to-date",
+                        "ray-cluster-name": self.cluster_name,
+                        "ray-user-node-type": config['head_node_type'],
+                        "ray-runtime-config": runtime_hash,
+                        "ray-file-mounts-contents": file_mounts_contents_hash
+                    }
+
+                    logger.info(f'Setting HEAD node tags {head_tags}')
+                    self.set_node_tags(node['id'], head_tags)
+
 
     def __init__(self, provider_config, cluster_name):
         NodeProvider.__init__(self, provider_config, cluster_name)
 
+        # ==============
+        # workarround to set all loggers to debug level
+        # ==============
+        
         logger = logging.getLogger()
         logger.setLevel(logging.DEBUG)
         for handler in logger.handlers:
@@ -170,6 +205,8 @@ class Gen2NodeProvider(NodeProvider):
         loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
         for logger in loggers:
             logger.setLevel(logging.DEBUG)
+        
+        # ==============
 
         self.lock = threading.RLock()
 
@@ -197,6 +234,10 @@ class Gen2NodeProvider(NodeProvider):
         elif f"{self.cluster_name}-{NODE_KIND_HEAD}" in name:
             return NODE_KIND_HEAD
 
+    """
+    in case filter is as simple as get all nodes or get worker nodes or get head nodes
+    return nodes based on naming
+    """
     def _get_nodes_by_tags(self, filters):
 
         nodes = []
@@ -205,7 +246,7 @@ class Gen2NodeProvider(NodeProvider):
             result = self.ibm_vpc_client.list_instances().get_result()
             for instance in result['instances']:
                 kind = self._get_node_type(instance['name'])
-                if kind:
+                if kind and instance['id'] not in self.deleted_nodes:
                     if not filters or kind == filters[TAG_RAY_NODE_KIND]:
                         nodes.append(instance)
                         with self.lock:
@@ -629,6 +670,8 @@ class Gen2NodeProvider(NodeProvider):
                 # drop node tags
                 self.nodes_tags.pop(node_id, None)
                 self.pending_nodes.pop(node['id'], None)
+                self.deleted_nodes.append(node_id)
+                self.cached_nodes.pop(node_id, None)
 
                 # calling set_node_tags with None will trigger only dumps
                 self.set_node_tags(None, None)
@@ -676,10 +719,6 @@ class Gen2NodeProvider(NodeProvider):
             else:
                 cli_logger.print(f"Terminating instance {node_id}")
                 self._delete_node(node_id)
-
-            with self.lock:
-                self.deleted_nodes.append(node_id)
-                self.cached_nodes.pop(node_id, None)
             
         except ApiException as e:
             if e.code == 404:
