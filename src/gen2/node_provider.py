@@ -288,53 +288,53 @@ class Gen2NodeProvider(NodeProvider):
 
         for node in found_nodes:
 
-                # check if node scheduled for delete
-                with self.lock:
-                    if node['id'] in self.deleted_nodes:
-                        logger.info(f"{node['id']} scheduled for delete")
-                        continue
-
-                # validate instance in correct state
-                valid_statuses = ["pending", "starting", "running"]
-                if node["status"] not in valid_statuses:
-                    logger.info(f"{node['id']} status {node['status']}"
-                        f" not in {valid_statuses}, skipping")
+            # check if node scheduled for delete
+            with self.lock:
+                if node['id'] in self.deleted_nodes:
+                    logger.info(f"{node['id']} scheduled for delete")
                     continue
 
-                # validate instance not hanging in pending state
-                with self.lock:
-                    if node['id'] in self.pending_nodes:
-                        if node["status"] != "running":
-                            pending_time = self.pending_nodes[node['id']] - time.time()
-                            logger.info(
-                                f"{node['id']} is pending for {pending_time}"
-                            )
-                            if pending_time > PENDING_TIMEOUT:
-                                logger.error(
-                                    f"pending timeout {PENDING_TIMEOUT} reached, "
-                                    f"deleting instance {node['id']}")
-                                self._delete_node(node['id'])
-                        else:
-                            self.pending_nodes.pop(node['id'], None)
+            # validate instance in correct state
+            valid_statuses = ["pending", "starting", "running"]
+            if node["status"] not in valid_statuses:
+                logger.info(f"{node['id']} status {node['status']}"
+                    f" not in {valid_statuses}, skipping")
+                continue
 
-                if self._get_node_type(node["name"]) == NODE_KIND_HEAD:
-                    nic_id = node["network_interfaces"][0]["id"]
-
-                    # find head node external ip
-                    res = self.ibm_vpc_client.\
-                        list_instance_network_interface_floating_ips(
-                            node['id'], nic_id).get_result()
-
-                    floating_ips = res["floating_ips"]
-                    if len(floating_ips) == 0:
-                        # not adding a head node missing floating ip
-                        continue
+            # validate instance not hanging in pending state
+            with self.lock:
+                if node['id'] in self.pending_nodes:
+                    if node["status"] != "running":
+                        pending_time = self.pending_nodes[node['id']] - time.time()
+                        logger.info(
+                            f"{node['id']} is pending for {pending_time}"
+                        )
+                        if pending_time > PENDING_TIMEOUT:
+                            logger.error(
+                                f"pending timeout {PENDING_TIMEOUT} reached, "
+                                f"deleting instance {node['id']}")
+                            self._delete_node(node['id'])
                     else:
-                        # currently head node always has floating ip
-                        # in case floating ip present we want to add it
-                        node["floating_ips"] = floating_ips
-                
-                nodes.append(node)
+                        self.pending_nodes.pop(node['id'], None)
+
+            if self._get_node_type(node["name"]) == NODE_KIND_HEAD:
+                nic_id = node["network_interfaces"][0]["id"]
+
+                # find head node external ip
+                res = self.ibm_vpc_client.\
+                    list_instance_network_interface_floating_ips(
+                        node['id'], nic_id).get_result()
+
+                floating_ips = res["floating_ips"]
+                if len(floating_ips) == 0:
+                    # not adding a head node missing floating ip
+                    continue
+                else:
+                    # currently head node always has floating ip
+                    # in case floating ip present we want to add it
+                    node["floating_ips"] = floating_ips
+            
+            nodes.append(node)
 
             for node in nodes:
                 self.cached_nodes[node["id"]] = node
