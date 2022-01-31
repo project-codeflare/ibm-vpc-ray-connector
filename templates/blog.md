@@ -26,30 +26,9 @@ Although it is not mandatory, but it is highly encouraged to use [python virtual
 - Use `lithopscloud` interactive config tool to setup your VPC and generate `cluster-config.yaml`
     ```bash
     lithopscloud --iam-api-key <IAM_API_KEY> --output-file  cluster-config.yaml
-
-    # Select `Ray Gen2` and then follow the interactive wizard
-    [?] Please select a compute backend: Ray Gen2
-      Lithops Gen2
-      Lithops Cloud Functions
-      Lithops Code Engine
-    > Ray Gen2
-      Local Host
-
-    [?] Choose region: eu-de
-      au-syd
-      br-sao
-      ca-tor
-    > eu-de
-      eu-gb
-      jp-osa
-      jp-tok
-      us-east
-      us-south
-      
-      .
-      .
-      .
     ```
+
+![demo](https://github.com/project-codeflare/gen2-connector/blob/blog/templates/gen2-connector.gif)
     
     Ray will spawn its head and worker nodes on Virtual Server Instances.
     For demo purposes, when inquered to provide requested number of worker nodes, it is recommended to either leave 0 or specify 1 to minimize resources consumption.
