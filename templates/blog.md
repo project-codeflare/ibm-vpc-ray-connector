@@ -1,7 +1,10 @@
 # Ray on IBM Cloud VPC
 
-How to run Ray — an open technology for fast and simple distributed computing — on IBM Cloud® VPC.
-What is IBM Cloud® VPC?
+
+
+## How to run Ray — an open technology for fast and simple distributed computing — on IBM Cloud® VPC.
+
+### What is IBM Cloud® VPC?
 
 [IBM Cloud Virtual Private Cloud (VPC)](https://www.ibm.com/cloud/vpc) starts a new generation of IBM Cloud infrastructure. Designed from the ground up for cloud-native workloads, VPC provides a brand-new experience to manage virtual machine-based compute, storage, and networking resources in a private, secure space you define.
 
