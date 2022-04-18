@@ -51,7 +51,7 @@ def _create_vpc_client(endpoint, authenticator):
     """
     Creates an IBM VPC python-sdk instance
     """
-        
+    ibm_vpc_client = VpcV1("2021-01-19", authenticator=authenticator)
     ibm_vpc_client.set_service_url(endpoint + "/v1")
 
     return ibm_vpc_client
