@@ -51,7 +51,7 @@ def _create_vpc_client(endpoint, authenticator):
     """
     Creates an IBM VPC python-sdk instance
     """
-    ibm_vpc_client = VpcV1("2021-01-19", authenticator=authenticator)
+        
     ibm_vpc_client.set_service_url(endpoint + "/v1")
 
     return ibm_vpc_client
@@ -96,7 +96,7 @@ class Gen2NodeProvider(NodeProvider):
                     _self = args[0]
                     with _self.lock:
                         _self.ibm_vpc_client = _create_vpc_client(
-                            _self.endpoint, IAMAuthenticator(_self.iam_api_key))
+                            _self.endpoint, IAMAuthenticator(_self.iam_api_key, url=_self.iam_endpoint))
                     
                     time.sleep(1)
 
@@ -210,9 +210,10 @@ class Gen2NodeProvider(NodeProvider):
 
         self.endpoint = self.provider_config["endpoint"]
         self.iam_api_key = self.provider_config["iam_api_key"]
+        self.iam_endpoint = self.provider_config.get("iam_endpoint")
 
         self.ibm_vpc_client = _create_vpc_client(
-                self.endpoint, IAMAuthenticator(self.iam_api_key))
+                self.endpoint, IAMAuthenticator(self.iam_api_key, url=self.iam_endpoint))
 
         self._load_tags()
 
