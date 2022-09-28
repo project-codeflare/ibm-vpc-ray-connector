@@ -56,7 +56,7 @@ def _get_vpc_client(endpoint, authenticator):
     """
     Creates an IBM VPC python-sdk instance
     """
-    ibm_vpc_client = VpcV1("2021-01-19", authenticator=authenticator)
+    ibm_vpc_client = VpcV1(authenticator=authenticator)
     ibm_vpc_client.set_service_url(endpoint + "/v1")
 
     return ibm_vpc_client
@@ -372,17 +372,17 @@ class IBMGen2NodeProvider(NodeProvider):
         node = self._get_cached_node(node_id)
 
         try:
-            primary_ipv4_address = node["network_interfaces"][0].get(
-                "primary_ipv4_address"
+            primary_ip = node["network_interfaces"][0].get(
+                "primary_ip"
             )
-            if primary_ipv4_address is None:
+            if primary_ip is None:
                 node = self._get_node(node_id)
         except Exception:
             node = self._get_node(node_id)
 
         logger.debug(f"in internal_ip, returning ip for node {node}")
 
-        return node["network_interfaces"][0].get("primary_ipv4_address")
+        return node["network_interfaces"][0].get("primary_ip")
 
     @log_in_out
     def set_node_tags(self, node_id, tags):
@@ -509,7 +509,7 @@ class IBMGen2NodeProvider(NodeProvider):
         # check if floating ip is not attached yet
         inst_p_nic = instance["primary_network_interface"]
 
-        if inst_p_nic["primary_ipv4_address"] and inst_p_nic["id"] == fip_id:
+        if inst_p_nic["primary_ip"] and inst_p_nic["id"] == fip_id:
             # floating ip already attached. do nothing
             logger.debug("Floating IP {} already attached to eth0".format(fip))
         else:
