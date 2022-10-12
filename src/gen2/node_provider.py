@@ -252,6 +252,7 @@ class IBMGen2NodeProvider(NodeProvider):
     def non_terminated_nodes(self, tag_filters):
         """ 
         returns list of ids of non terminated nodes, matching the specified tags. updates the nodes cache.
+        IMPORTANT: this function is called periodically by ray, a fact utilized to refresh the cache (self.cached_nodes).
         Args:
             tag_filters(dict): specified conditions by which nodes will be filtered. 
         """
@@ -320,12 +321,14 @@ class IBMGen2NodeProvider(NodeProvider):
 
     @log_in_out
     def is_running(self, node_id):
+        """returns whether a node is in status running"""
         with self.lock:
             node = self._get_cached_node(node_id)
             return node["status"] == "running"
 
     @log_in_out
     def is_terminated(self, node_id):
+        """returns True if a node is either not recorded or not in any valid status."""
         with self.lock:
             try:
                 node = self._get_cached_node(node_id)
@@ -335,6 +338,8 @@ class IBMGen2NodeProvider(NodeProvider):
 
     @log_in_out
     def node_tags(self, node_id):
+        """returns tags of specified node id """
+
         with self.lock:
             return self.nodes_tags.get(node_id, {})
 
