@@ -247,14 +247,11 @@ class IBMGen2NodeProvider(NodeProvider):
 
         return nodes
 
-    """
-    Returns ids of non terminated nodes
-    """
-
     @log_in_out
     def non_terminated_nodes(self, tag_filters):
+        """ returns list of ids of non terminated nodes, matching the specified tags. updates the nodes cache."""
 
-        nodes = []
+        res_nodes = []  # collecting valid nodes that are either starting, running or pending (below PENDING_TIMEOUT threshold)
 
         found_nodes = self._get_nodes_by_tags(tag_filters)
 
@@ -286,10 +283,12 @@ class IBMGen2NodeProvider(NodeProvider):
                                 f"pending timeout {PENDING_TIMEOUT} reached, "
                                 f"deleting instance {node['id']}"
                             )
-                            self._delete_node(node["id"])
+                            self._delete_node(node["id"])  # we won't try to restart a failed node even if  
+                            continue  # avoid adding the node to cached_nodes and move on the next one
                     else:
                         self.pending_nodes.pop(node["id"], None)
 
+            # if node is a head node, validate a floating ip is bound to it 
             if self._get_node_type(node["name"]) == NODE_KIND_HEAD:
                 nic_id = node["network_interfaces"][0]["id"]
 
@@ -300,19 +299,19 @@ class IBMGen2NodeProvider(NodeProvider):
 
                 floating_ips = res["floating_ips"]
                 if len(floating_ips) == 0:
-                    # not adding a head node missing floating ip
+                    # not adding a head node that's missing floating ip
                     continue
                 else:
                     # currently head node always has floating ip
                     # in case floating ip present we want to add it
                     node["floating_ips"] = floating_ips
 
-            nodes.append(node)
+            res_nodes.append(node)
 
-            for node in nodes:
-                self.cached_nodes[node["id"]] = node
+        for node in res_nodes:
+            self.cached_nodes[node["id"]] = node
 
-        return [node["id"] for node in nodes]
+        return [node["id"] for node in res_nodes]
 
     @log_in_out
     def is_running(self, node_id):
