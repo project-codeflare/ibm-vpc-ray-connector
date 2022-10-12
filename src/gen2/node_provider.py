@@ -44,11 +44,10 @@ logger = logging.getLogger(__name__)
 
 INSTANCE_NAME_UUID_LEN = 8
 INSTANCE_NAME_MAX_LEN = 64
-PENDING_TIMEOUT = 120
-
+PENDING_TIMEOUT = 120  #  a node of this age that isn't running, will be removed from the cluster.    
 PROFILE_NAME_DEFAULT = "cx2-2x4"
 VOLUME_TIER_NAME_DEFAULT = "general-purpose"
-RAY_RECYCLABLE = "ray-recyclable"
+RAY_RECYCLABLE = "ray-recyclable"  # identifies resources created by this package. these resources are deleted alongside the node.  
 GEN2_TAGS = ".ray-gen2-tags"
 
 
@@ -69,8 +68,8 @@ class IBMGen2NodeProvider(NodeProvider):
     all necessary ibm gen2 details including existing VPC id, VS image, security
     group...etc.
 
-    Most convinient way to generate config file is to use `lithopscloud` config
-    tool. Install it using `pip install lithopscloud`, run it with --pr flag,
+    Most convenient way to generate config file is to use `ibm-ray-config` config
+    tool. Install it using `pip install ibm-ray-config`, run it with --pr flag,
     choose `Ray IBM Gen2` and follow interactive wizard.
 
     Currently, instance tagging is implemented using internal cache
@@ -80,11 +79,9 @@ class IBMGen2NodeProvider(NodeProvider):
     cluster head node, while worker nodes are provisioned with private ips only.
     """
 
-    """
-    Tracing decorator. Needed for debugging. Will be removed before merging.
-    """
-
     def log_in_out(func):
+        """Tracing decorator for debugging purposes"""
+
         def decorated_func(*args, **kwargs):
             name = func.__name__
             logger.debug(
@@ -105,22 +102,21 @@ class IBMGen2NodeProvider(NodeProvider):
 
         return decorated_func
 
-    """
-    Load cluster tags from cache file, vanished nodes removed from cache
-    """
-
     def _load_tags(self):
+        """if local tags cache (file) exists (cluster is restarting), cache is loaded and deleted nodes are filtered away. result is dumped to local cache.
+        otherwise, initializes the in memory and local storage tags cache with the head's cluster tags.     """
         self.nodes_tags = {}
 
         self.tags_file = Path.home() / GEN2_TAGS
+
+        # local tags cache exists from former runs 
         if self.tags_file.is_file():
             all_tags = json.loads(self.tags_file.read_text())
             tags = all_tags.get(self.cluster_name, {})
 
+            # filters instances that were deleted since the last time the head node was up
             for instance_id, instance_tags in tags.items():
-                try:
-                    # this one is needed to filter out instances
-                    # dissapeared since master was up
+                try: 
                     self.ibm_vpc_client.get_instance(instance_id)
                     self.nodes_tags[instance_id] = instance_tags
                 except Exception as e:
@@ -130,14 +126,13 @@ class IBMGen2NodeProvider(NodeProvider):
                             f"cached instance {instance_id} not found, \
                                 will be removed from cache"
                         )
-            self.set_node_tags(None, None)
+            self.set_node_tags(None, None)  # dump in-memory cache to local cache (file). 
+ 
         else:
-            # check if the current node is a head node
-            name = socket.gethostname()
-
+            name = socket.gethostname() # returns the instance's (VSI) name 
             logger.debug(f"Check if {name} is HEAD")
-            if self._get_node_type(name) == NODE_KIND_HEAD:
 
+            if self._get_node_type(name) == NODE_KIND_HEAD: 
                 logger.debug(f"{name} is HEAD")
                 node = self.ibm_vpc_client.list_instances(name=name).get_result()[
                     "instances"
@@ -145,7 +140,7 @@ class IBMGen2NodeProvider(NodeProvider):
                 if node:
                     logger.debug(f"{name} is node {node} in vpc")
 
-                    ray_bootstrap_config = Path.home() / "ray_bootstrap_config.yaml"
+                    ray_bootstrap_config = Path.home() / "ray_bootstrap_config.yaml"  # reads the cluster's config file (an initialized defaults.yaml)
                     config = json.loads(ray_bootstrap_config.read_text())
                     (runtime_hash, mounts_contents_hash) = hash_runtime_conf(
                         config["file_mounts"], None, config
@@ -165,6 +160,13 @@ class IBMGen2NodeProvider(NodeProvider):
                     self.set_node_tags(node[0]["id"], head_tags)
 
     def __init__(self, provider_config, cluster_name):
+        """
+        Args:
+            provider_config (dict): containing the provider segment of the cluster's config file (see defaults.yaml).
+                initialized as an instance variable of the parent class, hence can accessed via self.
+            cluster_name(str): value of cluster_name within the cluster's config file. 
+
+        """
         NodeProvider.__init__(self, provider_config, cluster_name)
 
         self.lock = threading.RLock()
@@ -178,13 +180,11 @@ class IBMGen2NodeProvider(NodeProvider):
 
         self._load_tags()
 
-        # Cache of node objects from the last nodes() call
-        self.cached_nodes = {}
+        self.cached_nodes = {} # Cache of starting/running/pending(below PENDING_TIMEOUT) nodes. {node_id:node_data}.
+        self.pending_nodes = {} # cache of the nodes created, but not yet tagged and running. {node_id:time_of_creation}.
+        self.deleted_nodes = [] # ids of nodes scheduled for deletion.
 
-        # cache of the nodes created, but not yet tagged
-        self.pending_nodes = {}
-        self.deleted_nodes = []
-
+        # if cache_stopped_nodes == true, nodes will be stopped instead of deleted to accommodate future rise in demand  
         self.cache_stopped_nodes = provider_config.get("cache_stopped_nodes", True)
 
     def _get_node_type(self, name):
@@ -193,14 +193,15 @@ class IBMGen2NodeProvider(NodeProvider):
         elif f"{self.cluster_name}-{NODE_KIND_HEAD}" in name:
             return NODE_KIND_HEAD
 
-    """
-    in case filter is empty or get nodes by kind - return naming based nodes
-    """
-
     def _get_nodes_by_tags(self, filters):
+        """ 
+        returns list of nodes who's tags are matching the specified filters. 
+        Args:
+            filters(dict):  specified conditions to filter nodes by.
+        """
 
         nodes = []
-
+        # either no filters were specified or the only filter is the type of the node
         if not filters or list(filters.keys()) == [TAG_RAY_NODE_KIND]:
             result = self.ibm_vpc_client.list_instances().get_result()
             instances = result["instances"]
@@ -222,7 +223,7 @@ class IBMGen2NodeProvider(NodeProvider):
                                     TAG_RAY_NODE_KIND: kind,
                                 }
                             )
-        else:
+        else:  # match filters specified
             with self.lock:
                 tags = self.nodes_tags.copy()
 
@@ -247,14 +248,15 @@ class IBMGen2NodeProvider(NodeProvider):
 
         return nodes
 
-    """
-    Returns ids of non terminated nodes
-    """
-
     @log_in_out
     def non_terminated_nodes(self, tag_filters):
+        """ 
+        returns list of ids of non terminated nodes, matching the specified tags. updates the nodes cache.
+        Args:
+            tag_filters(dict): specified conditions by which nodes will be filtered. 
+        """
 
-        nodes = []
+        res_nodes = []  # collecting valid nodes that are either starting, running or pending (below PENDING_TIMEOUT threshold)
 
         found_nodes = self._get_nodes_by_tags(tag_filters)
 
@@ -286,10 +288,12 @@ class IBMGen2NodeProvider(NodeProvider):
                                 f"pending timeout {PENDING_TIMEOUT} reached, "
                                 f"deleting instance {node['id']}"
                             )
-                            self._delete_node(node["id"])
+                            self._delete_node(node["id"])  # we won't try to restart a failed node even if  
+                            continue  # avoid adding the node to cached_nodes and move on the next one
                     else:
                         self.pending_nodes.pop(node["id"], None)
 
+            # if node is a head node, validate a floating ip is bound to it 
             if self._get_node_type(node["name"]) == NODE_KIND_HEAD:
                 nic_id = node["network_interfaces"][0]["id"]
 
@@ -300,19 +304,19 @@ class IBMGen2NodeProvider(NodeProvider):
 
                 floating_ips = res["floating_ips"]
                 if len(floating_ips) == 0:
-                    # not adding a head node missing floating ip
+                    # not adding a head node that's missing floating ip
                     continue
                 else:
                     # currently head node always has floating ip
                     # in case floating ip present we want to add it
                     node["floating_ips"] = floating_ips
 
-            nodes.append(node)
+            res_nodes.append(node)
 
-            for node in nodes:
-                self.cached_nodes[node["id"]] = node
+        for node in res_nodes:
+            self.cached_nodes[node["id"]] = node
 
-        return [node["id"] for node in nodes]
+        return [node["id"] for node in res_nodes]
 
     @log_in_out
     def is_running(self, node_id):
@@ -334,8 +338,9 @@ class IBMGen2NodeProvider(NodeProvider):
         with self.lock:
             return self.nodes_tags.get(node_id, {})
 
-    # return external ip for head and private ips for workers
     def _get_hybrid_ip(self, node_id):
+        """return external ip for head and private ips for workers"""
+    
         node = self._get_cached_node(node_id)
         node_type = self._get_node_type(node["name"])
         if node_type == NODE_KIND_HEAD:
@@ -352,23 +357,21 @@ class IBMGen2NodeProvider(NodeProvider):
 
     @log_in_out
     def external_ip(self, node_id):
+        """returns head node's public ip. 
+        if use_hybrid_ips==true in cluster's config file, returns the ip address of a node based on its 'Kind'."""
+
         with self.lock:
             if self.provider_config.get("use_hybrid_ips"):
                 return self._get_hybrid_ip(node_id)
 
             node = self._get_cached_node(node_id)
-
-            fip = node.get("floating_ips")
-            if fip:
-                return fip[0]["address"]
-
-            node = self._get_node(node_id)
             fip = node.get("floating_ips")
             if fip:
                 return fip[0]["address"]
 
     @log_in_out
     def internal_ip(self, node_id):
+        """returns the worker's node private ip address"""
         node = self._get_cached_node(node_id)
 
         try:
@@ -386,6 +389,12 @@ class IBMGen2NodeProvider(NodeProvider):
 
     @log_in_out
     def set_node_tags(self, node_id, tags):
+        """
+        updates local (file) tags cache. updates in memory cache if node_id and tags are specified 
+        Args:
+            node_id(str): id of the node provided by the cloud provider at creation.
+            tags(dict): specified conditions by which nodes will be filtered.
+        """
         with self.lock:
             # update in-memory cache
             if node_id and tags:
@@ -402,9 +411,8 @@ class IBMGen2NodeProvider(NodeProvider):
             self.tags_file.write_text(json.dumps(all_tags))
 
     def _get_instance_data(self, name):
-        """
-        Returns the instance information
-        """
+        """Returns instance (node) information matching the specified name"""
+
         instances_data = self.ibm_vpc_client.list_instances(name=name).get_result()
         if len(instances_data["instances"]) > 0:
             return instances_data["instances"][0]
@@ -412,8 +420,12 @@ class IBMGen2NodeProvider(NodeProvider):
 
     def _create_instance(self, name, base_config):
         """
-        Creates a new VM instance
+        Creates a new VM instance with the specified name, based on the provided base_config configuration dictionary 
+        Args:
+            name(str): name of the instance.
+            base_config(dict): specific node relevant data. node type segment of the cluster's config file, e.g. ray_head_default. 
         """
+
         logger.info("Creating new VM instance {}".format(name))
 
         security_group_identity_model = {"id": base_config["security_group_id"]}
@@ -474,18 +486,18 @@ class IBMGen2NodeProvider(NodeProvider):
         return resp.result
 
     def _create_floating_ip(self, base_config):
+        """returns unbound floating IP address. Creates a new ip if none were found in the config file. 
+        Args:
+            base_config(dict): specific node relevant data. node type segment of the cluster's config file, e.g. ray_head_default.
         """
-        Creates or attaches floating IP address
-        """
+
         if base_config.get("head_ip"):
-            for ip in self.ibm_vpc_client.list_floating_ips().get_result()[
-                "floating_ips"
-            ]:
+            for ip in self.ibm_vpc_client.list_floating_ips().get_result()["floating_ips"]:
                 if ip["address"] == base_config["head_ip"]:
                     return ip
 
         floating_ip_name = "{}-{}".format(RAY_RECYCLABLE, uuid4().hex[:4])
-
+        # create a new floating ip 
         logger.info("Creating floating IP {}".format(floating_ip_name))
         floating_ip_prototype = {}
         floating_ip_prototype["name"] = floating_ip_name
@@ -499,6 +511,13 @@ class IBMGen2NodeProvider(NodeProvider):
         return floating_ip_data
 
     def _attach_floating_ip(self, instance, fip_data):
+        """
+        attach a floating ip to the network interface of an instance
+        Args: 
+            instance(dict): extensive data of a node.
+            fip_data(dict): floating ip data. 
+        """
+
         fip = fip_data["address"]
         fip_id = fip_data["id"]
 
@@ -519,6 +538,11 @@ class IBMGen2NodeProvider(NodeProvider):
             )
 
     def _stopped_nodes(self, tags):
+        """
+        returns stopped nodes of type specified in tags. TAG_RAY_NODE_KIND is a mandatory field. 
+        Args:
+            tags(dict): set of conditions nodes will be filtered by. 
+        """
 
         filter = {
             TAG_RAY_CLUSTER_NAME: self.cluster_name,
@@ -542,6 +566,14 @@ class IBMGen2NodeProvider(NodeProvider):
         return nodes
 
     def _create_node(self, base_config, tags):
+        """
+        returns dict {instance_id:instance_data} of newly created node. updates tags cache.
+        
+        Args:
+            base_config(dict): specific node relevant data. node type segment of the cluster's config file, e.g. ray_head_default.
+            tags(dict): set of conditions nodes will be filtered by.
+        """
+
         name_tag = tags[TAG_RAY_NODE_NAME]
         assert (
             len(name_tag) <= (INSTANCE_NAME_MAX_LEN - INSTANCE_NAME_UUID_LEN - 1)
@@ -555,9 +587,9 @@ class IBMGen2NodeProvider(NodeProvider):
         # create instance in vpc
         instance = self._create_instance(name, base_config)
 
-        # currently create and tag is not an atomic operation
+        # record creation time. used to discover hanging nodes.
         with self.lock:
-            self.pending_nodes[instance["id"]] = time.time()
+            self.pending_nodes[instance["id"]] = time.time()   
 
         tags[TAG_RAY_CLUSTER_NAME] = self.cluster_name
         tags[TAG_RAY_NODE_NAME] = name
@@ -572,6 +604,18 @@ class IBMGen2NodeProvider(NodeProvider):
 
     @log_in_out
     def create_node(self, base_config, tags, count) -> None:
+        """
+        returns dict of {instance_id:instance_data} of nodes. creates 'count' number of nodes.
+        if enabled in base_config, tries to re-run stopped nodes before creation of new instances.
+        
+        Args:
+            base_config(dict): specific node relevant data. node type segment of the cluster's config file, e.g. ray_head_default.
+                                a template shared by all nodes when creating multiple nodes (count>1). 
+            tags(dict): set of conditions nodes will be filtered by.
+            count(int): number of nodes to create. 
+
+        """
+
         stopped_nodes_dict = {}
         futures = []
 
@@ -626,6 +670,8 @@ class IBMGen2NodeProvider(NodeProvider):
         return all_created_nodes
 
     def _delete_node(self, node_id):
+        """deletes specified instance. if it's a head node delete its IPs if it was created by Ray. updates caches. """
+
         logger.debug(f"in _delete_node with id {node_id}")
         try:
             floating_ips = []
@@ -674,9 +720,9 @@ class IBMGen2NodeProvider(NodeProvider):
 
     @log_in_out
     def terminate_node(self, node_id):
-        """
-        Deletes the VM instance and the associated volume
-        """
+        """Deletes the VM instance and the associated volume. 
+        if cache_stopped_nodes==true in the cluster config file, nodes are stopped instead. """
+
         logger.info("Deleting VM instance {}".format(node_id))
 
         try:

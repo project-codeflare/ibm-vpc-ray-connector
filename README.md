@@ -15,10 +15,10 @@ pip install gen2-connector
 
 3. Create cluster config file
 
-    * Use interactive `lithopscloud` config tool to generate cluster.yaml configuration file
+    * Use interactive `ibm-ray-config` config tool to generate cluster.yaml configuration file
     ```
-    pip install lithopscloud
-    lithopscloud -o cluster.yaml
+    pip install ibm-ray-config
+    ibm-ray-config -o cluster.yaml
     ```
     
 4. Use generated file to bring ray cluster up, e.g
