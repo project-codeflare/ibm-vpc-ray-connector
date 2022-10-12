@@ -365,12 +365,6 @@ class IBMGen2NodeProvider(NodeProvider):
                 return self._get_hybrid_ip(node_id)
 
             node = self._get_cached_node(node_id)
-
-            fip = node.get("floating_ips")
-            if fip:
-                return fip[0]["address"]
-
-            node = self._get_node(node_id)
             fip = node.get("floating_ips")
             if fip:
                 return fip[0]["address"]
