@@ -22,7 +22,7 @@ idle_timeout_minutes: 5
 # Cloud-provider specific configuration.
 provider:
     type: external
-    module: gen2.node_provider.Gen2NodeProvider
+    module: vpc.node_provider.IBMVPCNodeProvider
     endpoint: https://us-east.iaas.cloud.ibm.com
     zone_name: us-east-2
     iam_api_key: IAM_API_KEY
@@ -77,7 +77,7 @@ head_node_type: ray_head_default
 # Files or directories to copy to the head and worker nodes. The format is a
 # dictionary from REMOTE_PATH: LOCAL_PATH, e.g.
 file_mounts: {
-    # TODO: this one will be removed after gen2 contribution
+    # TODO: this one will be removed after connector contribution
     #"/path2/on/remote/machine": "/path2/on/local/machine", # points to root folder of your local ray repository, e.g "/root/ray": "/home/kpavel/ray" 
 }
 
@@ -116,7 +116,7 @@ setup_commands:
     - apt install libgl1-mesa-glx -y && pip install pandas tabulate gym tensorboardX dm_tree opencv-python starlette uvicorn
     - echo alias python=\'python3\'>>~/.bash_aliases
     - which ray || pip install ray[default]==1.8.0
-    - pip install gen2-connector
+    - pip install ibm-vpc-ray-connector
 
 # Custom commands that will be run on the head node after common setup.
 head_setup_commands: []

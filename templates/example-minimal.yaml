@@ -7,7 +7,7 @@ max_workers: 1
 
 # Cloud-provider specific configuration.
 provider:
-    type: gen2
+    type: ibm_vpc
     endpoint: https://us-east.iaas.cloud.ibm.com
     zone_name: us-east-2
     iam_api_key: IAM_API_KEY # please, specify your own api key. can be created at https://cloud.ibm.com/iam/apikeys

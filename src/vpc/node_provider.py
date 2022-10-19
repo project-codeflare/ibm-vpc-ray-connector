@@ -48,7 +48,7 @@ PENDING_TIMEOUT = 120  #  a node of this age that isn't running, will be removed
 PROFILE_NAME_DEFAULT = "cx2-2x4"
 VOLUME_TIER_NAME_DEFAULT = "general-purpose"
 RAY_RECYCLABLE = "ray-recyclable"  # identifies resources created by this package. these resources are deleted alongside the node.  
-GEN2_TAGS = ".ray-gen2-tags"
+VPC_TAGS = ".ray-vpc-tags"
 
 
 def _get_vpc_client(endpoint, authenticator):
@@ -61,16 +61,16 @@ def _get_vpc_client(endpoint, authenticator):
     return ibm_vpc_client
 
 
-class IBMGen2NodeProvider(NodeProvider):
-    """Node Provider for IBM Gen2
+class IBMVPCNodeProvider(NodeProvider):
+    """Node Provider for IBM VPC
 
     This provider assumes ray-cluster.yaml contains IBM Cloud credentials and
-    all necessary ibm gen2 details including existing VPC id, VS image, security
+    all necessary ibm vpc details including existing VPC id, VS image, security
     group...etc.
 
     Most convenient way to generate config file is to use `ibm-ray-config` config
     tool. Install it using `pip install ibm-ray-config`, run it with --pr flag,
-    choose `Ray IBM Gen2` and follow interactive wizard.
+    choose `Ray IBM VPC` and follow interactive wizard.
 
     Currently, instance tagging is implemented using internal cache
 
@@ -107,7 +107,7 @@ class IBMGen2NodeProvider(NodeProvider):
         otherwise, initializes the in memory and local storage tags cache with the head's cluster tags.     """
         self.nodes_tags = {}
 
-        self.tags_file = Path.home() / GEN2_TAGS
+        self.tags_file = Path.home() / VPC_TAGS
 
         # local tags cache exists from former runs 
         if self.tags_file.is_file():
@@ -407,7 +407,7 @@ class IBMGen2NodeProvider(NodeProvider):
                 node_cache.update(tags)
 
             # dump in-memory cache to file
-            self.tags_file = Path.home() / GEN2_TAGS
+            self.tags_file = Path.home() / VPC_TAGS
 
             all_tags = {}
             if self.tags_file.is_file():
@@ -681,7 +681,8 @@ class IBMGen2NodeProvider(NodeProvider):
         try:
             floating_ips = []
 
-            try:
+            # get a node's (head node) floating ip
+            try:  
                 node = self._get_node(node_id)
                 floating_ips = node.get("floating_ips", [])
             except Exception:
@@ -696,10 +697,11 @@ class IBMGen2NodeProvider(NodeProvider):
                 self.deleted_nodes.append(node_id)
                 self.cached_nodes.pop(node_id, None)
 
-                # calling set_node_tags with None will trigger only dumps
+                # calling set_node_tags with None will dump self.nodes_tags cache to file
                 self.set_node_tags(None, None)
 
-            for ip in floating_ips:
+            # delete all ips attached to head node if they were created by this module.
+            for ip in floating_ips: 
                 if ip["name"].startswith(RAY_RECYCLABLE):
                     self.ibm_vpc_client.delete_floating_ip(ip["id"])
         except ApiException as e:

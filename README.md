@@ -1,11 +1,11 @@
-# Gen2-connector enables Ray cluster to be deployed over IBM Gen2 infrastructure
+# ibm-vpc-ray-connector enables Ray cluster to be deployed over IBM VPC infrastructure
 
 > Use of python virtual environment, e.g. [virtualenv](https://virtualenv.pypa.io/en/latest) is greatly encouraged, to avoid installing Python packages globally which could break system tools or other projects
 
-1. Install gen2-connector on your machine
+1. Install ibm-vpc-ray-connector on your machine
 
 ```
-pip install gen2-connector
+pip install ibm-vpc-ray-connector
 ```
 
 2. Configure ibm vpc
