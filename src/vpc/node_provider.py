@@ -573,16 +573,24 @@ class IBMVPCNodeProvider(NodeProvider):
     def _create_node(self, base_config, tags):
         """
         returns dict {instance_id:instance_data} of newly created node. updates tags cache.
+        creates a node in the following format: ray-{cluster_name}-{node_type}-{uuid}
         
         Args:
             base_config(dict): specific node relevant data. node type segment of the cluster's config file, e.g. ray_head_default.
             tags(dict): set of conditions nodes will be filtered by.
         """
-
+        
         name_tag = tags[TAG_RAY_NODE_NAME]
-        assert (
-            len(name_tag) <= (INSTANCE_NAME_MAX_LEN - INSTANCE_NAME_UUID_LEN - 1)
-        ) and re.match("^[a-z0-9-:-]*$", name_tag), (name_tag, len(name_tag))
+        if len(name_tag) > INSTANCE_NAME_MAX_LEN - INSTANCE_NAME_UUID_LEN - 1:
+            logger.error(f"node name: {name_tag} is longer then {INSTANCE_NAME_MAX_LEN - INSTANCE_NAME_UUID_LEN - 1} characters")
+            raise Exception("Invalid node name: length check failed")
+
+        pattern = re.compile("^([a-z]|[a-z][-a-z0-9]*[a-z0-9])$")  # IBM VPC VSI pattern requirement  
+        res = pattern.match(name_tag)
+        
+        if not res:
+            logger.error(f"node name {name_tag} doesn't match the naming pattern `[a-z]|[a-z][-a-z0-9]*[a-z0-9]` for IBM VPC instance ")
+            raise Exception("Invalid node name: pattern check for IBM VPC instance failed")
 
         # append instance name with uuid
         name = "{name_tag}-{uuid}".format(
