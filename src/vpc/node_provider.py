@@ -28,6 +28,7 @@ from uuid import uuid4
 from ibm_cloud_sdk_core import ApiException
 from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
 from ibm_vpc import VpcV1
+from typing import Any, Dict, List, Optional
 
 from ray.autoscaler._private.cli_logger import cli_logger
 from ray.autoscaler._private.util import hash_runtime_conf
@@ -55,7 +56,7 @@ def _get_vpc_client(endpoint, authenticator):
     """
     Creates an IBM VPC python-sdk instance
     """
-    ibm_vpc_client = VpcV1(authenticator=authenticator)
+    ibm_vpc_client = VpcV1(version = '2022-06-30', authenticator=authenticator)
     ibm_vpc_client.set_service_url(endpoint + "/v1")
 
     return ibm_vpc_client
