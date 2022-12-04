@@ -380,9 +380,7 @@ class IBMVPCNodeProvider(NodeProvider):
         node = self._get_cached_node(node_id)
 
         try:
-            primary_ip = node["network_interfaces"][0].get(
-                "primary_ip"
-            )
+            primary_ip = node["network_interfaces"][0].get("primary_ip")['address']
             if primary_ip is None:
                 node = self._get_node(node_id)
         except Exception:
@@ -390,7 +388,7 @@ class IBMVPCNodeProvider(NodeProvider):
 
         logger.debug(f"in internal_ip, returning ip for node {node}")
 
-        return node["network_interfaces"][0].get("primary_ip")
+        return node["network_interfaces"][0].get("primary_ip")['address']
 
     @log_in_out
     def set_node_tags(self, node_id, tags):
