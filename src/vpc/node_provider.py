@@ -22,6 +22,8 @@ import re
 import socket
 import threading
 import time
+import os
+import shutil
 from pathlib import Path
 from uuid import uuid4
 
@@ -41,6 +43,7 @@ from ray.autoscaler.tags import (
     TAG_RAY_NODE_NAME,
 )
 
+LOGS_FOLDER = "/tmp/connector_logs/"   # this node_provider's logs location. 
 logger = logging.getLogger(__name__)
 
 INSTANCE_NAME_UUID_LEN = 8
@@ -169,6 +172,9 @@ class IBMVPCNodeProvider(NodeProvider):
 
         """
         NodeProvider.__init__(self, provider_config, cluster_name)
+        logs_path = get_logs_path()
+        fileHandler = logging.FileHandler(logs_path)
+        logger.addHandler(fileHandler)
 
         self.lock = threading.RLock()
         self.endpoint = self.provider_config["endpoint"]
@@ -784,3 +790,9 @@ class IBMVPCNodeProvider(NodeProvider):
     @staticmethod
     def bootstrap_config(cluster_config)-> Dict[str, Any]:
         return cluster_config
+    
+def get_logs_path():
+    if not os.path.exists(LOGS_FOLDER):
+        os.mkdir(LOGS_FOLDER)
+    return LOGS_FOLDER + time.strftime("%Y-%m-%d--%H-%M-%S")
+
