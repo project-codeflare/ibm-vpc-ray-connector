@@ -45,6 +45,7 @@ from ray.autoscaler.tags import (
 
 LOGS_FOLDER = "/tmp/connector_logs/"   # this node_provider's logs location. 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 INSTANCE_NAME_UUID_LEN = 8
 INSTANCE_NAME_MAX_LEN = 64
