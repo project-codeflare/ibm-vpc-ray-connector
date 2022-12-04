@@ -44,8 +44,9 @@ from ray.autoscaler.tags import (
 )
 
 LOGS_FOLDER = "/tmp/connector_logs/"   # this node_provider's logs location. 
+logging.basicConfig(level = logging.INFO,  format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+
 
 INSTANCE_NAME_UUID_LEN = 8
 INSTANCE_NAME_MAX_LEN = 64
@@ -143,7 +144,7 @@ class IBMVPCNodeProvider(NodeProvider):
                     "instances"
                 ]
                 if node:
-                    logger.debug(f"{name} is node {node} in vpc")
+                    logger.debug(f"{name} is node in vpc")
 
                     ray_bootstrap_config = Path.home() / "ray_bootstrap_config.yaml"  # reads the cluster's config file (an initialized defaults.yaml)
                     config = json.loads(ray_bootstrap_config.read_text())
@@ -173,6 +174,7 @@ class IBMVPCNodeProvider(NodeProvider):
 
         """
         NodeProvider.__init__(self, provider_config, cluster_name)
+
         logs_path = get_logs_path()
         fileHandler = logging.FileHandler(logs_path)
         logger.addHandler(fileHandler)
@@ -392,7 +394,7 @@ class IBMVPCNodeProvider(NodeProvider):
         except Exception:
             node = self._get_node(node_id)
 
-        logger.debug(f"in internal_ip, returning ip for node {node}")
+        logger.debug(f"in internal_ip, returning ip for node: {node['name']}, id: {node_id}")
 
         return node["network_interfaces"][0].get("primary_ip")['address']
 
