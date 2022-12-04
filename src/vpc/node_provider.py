@@ -28,6 +28,7 @@ from uuid import uuid4
 from ibm_cloud_sdk_core import ApiException
 from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
 from ibm_vpc import VpcV1
+from typing import Any, Dict, List, Optional
 
 from ray.autoscaler._private.cli_logger import cli_logger
 from ray.autoscaler._private.util import hash_runtime_conf
@@ -55,7 +56,7 @@ def _get_vpc_client(endpoint, authenticator):
     """
     Creates an IBM VPC python-sdk instance
     """
-    ibm_vpc_client = VpcV1(authenticator=authenticator)
+    ibm_vpc_client = VpcV1(version = '2022-06-30', authenticator=authenticator)
     ibm_vpc_client.set_service_url(endpoint + "/v1")
 
     return ibm_vpc_client
@@ -249,7 +250,7 @@ class IBMVPCNodeProvider(NodeProvider):
         return nodes
 
     @log_in_out
-    def non_terminated_nodes(self, tag_filters):
+    def non_terminated_nodes(self, tag_filters)-> List[str]:
         """ 
         returns list of ids of non terminated nodes, matching the specified tags. updates the nodes cache.
         IMPORTANT: this function is called periodically by ray, a fact utilized to refresh the cache (self.cached_nodes).
@@ -320,14 +321,14 @@ class IBMVPCNodeProvider(NodeProvider):
         return [node["id"] for node in res_nodes]
 
     @log_in_out
-    def is_running(self, node_id):
+    def is_running(self, node_id)-> bool:
         """returns whether a node is in status running"""
         with self.lock:
             node = self._get_cached_node(node_id)
             return node["status"] == "running"
 
     @log_in_out
-    def is_terminated(self, node_id):
+    def is_terminated(self, node_id)-> bool:
         """returns True if a node is either not recorded or not in any valid status."""
         with self.lock:
             try:
@@ -337,7 +338,7 @@ class IBMVPCNodeProvider(NodeProvider):
                 return True
 
     @log_in_out
-    def node_tags(self, node_id):
+    def node_tags(self, node_id)-> Dict[str, str]:
         """returns tags of specified node id """
 
         with self.lock:
@@ -361,7 +362,7 @@ class IBMVPCNodeProvider(NodeProvider):
             return self.internal_ip(node_id)
 
     @log_in_out
-    def external_ip(self, node_id):
+    def external_ip(self, node_id)-> str:
         """returns head node's public ip. 
         if use_hybrid_ips==true in cluster's config file, returns the ip address of a node based on its 'Kind'."""
 
@@ -375,14 +376,12 @@ class IBMVPCNodeProvider(NodeProvider):
                 return fip[0]["address"]
 
     @log_in_out
-    def internal_ip(self, node_id):
+    def internal_ip(self, node_id)-> str:
         """returns the worker's node private ip address"""
         node = self._get_cached_node(node_id)
 
         try:
-            primary_ip = node["network_interfaces"][0].get(
-                "primary_ip"
-            )
+            primary_ip = node["network_interfaces"][0].get("primary_ip")['address']
             if primary_ip is None:
                 node = self._get_node(node_id)
         except Exception:
@@ -390,10 +389,10 @@ class IBMVPCNodeProvider(NodeProvider):
 
         logger.debug(f"in internal_ip, returning ip for node {node}")
 
-        return node["network_interfaces"][0].get("primary_ip")
+        return node["network_interfaces"][0].get("primary_ip")['address']
 
     @log_in_out
-    def set_node_tags(self, node_id, tags):
+    def set_node_tags(self, node_id, tags) -> None:
         """
         updates local (file) tags cache. updates in memory cache if node_id and tags are specified 
         Args:
@@ -719,7 +718,7 @@ class IBMVPCNodeProvider(NodeProvider):
                 raise e
 
     @log_in_out
-    def terminate_nodes(self, node_ids):
+    def terminate_nodes(self, node_ids)-> Optional[Dict[str, Any]]:
 
         if not node_ids:
             return
@@ -734,7 +733,7 @@ class IBMVPCNodeProvider(NodeProvider):
             future.result()
 
     @log_in_out
-    def terminate_node(self, node_id):
+    def terminate_node(self, node_id)-> Optional[Dict[str, Any]]:
         """Deletes the VM instance and the associated volume. 
         if cache_stopped_nodes==true in the cluster config file, nodes are stopped instead. """
 
@@ -783,5 +782,5 @@ class IBMVPCNodeProvider(NodeProvider):
         return self._get_node(node_id)
 
     @staticmethod
-    def bootstrap_config(cluster_config):
+    def bootstrap_config(cluster_config)-> Dict[str, Any]:
         return cluster_config
