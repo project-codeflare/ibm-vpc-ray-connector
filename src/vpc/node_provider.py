@@ -256,7 +256,7 @@ class IBMVPCNodeProvider(NodeProvider):
 
         return nodes
 
-    @log_in_out
+    
     def non_terminated_nodes(self, tag_filters)-> List[str]:
         """ 
         returns list of ids of non terminated nodes, matching the specified tags. updates the nodes cache.
@@ -327,14 +327,14 @@ class IBMVPCNodeProvider(NodeProvider):
 
         return [node["id"] for node in res_nodes]
 
-    @log_in_out
+    
     def is_running(self, node_id)-> bool:
         """returns whether a node is in status running"""
         with self.lock:
             node = self._get_cached_node(node_id)
             return node["status"] == "running"
 
-    @log_in_out
+    
     def is_terminated(self, node_id)-> bool:
         """returns True if a node is either not recorded or not in any valid status."""
         with self.lock:
@@ -344,7 +344,7 @@ class IBMVPCNodeProvider(NodeProvider):
             except Exception:
                 return True
 
-    @log_in_out
+    
     def node_tags(self, node_id)-> Dict[str, str]:
         """returns tags of specified node id """
 
@@ -367,8 +367,7 @@ class IBMVPCNodeProvider(NodeProvider):
                 return fip[0]["address"]
         else:
             return self.internal_ip(node_id)
-
-    @log_in_out
+  
     def external_ip(self, node_id)-> str:
         """returns head node's public ip. 
         if use_hybrid_ips==true in cluster's config file, returns the ip address of a node based on its 'Kind'."""
@@ -382,7 +381,6 @@ class IBMVPCNodeProvider(NodeProvider):
             if fip:
                 return fip[0]["address"]
 
-    @log_in_out
     def internal_ip(self, node_id)-> str:
         """returns the worker's node private ip address"""
         node = self._get_cached_node(node_id)
@@ -398,7 +396,6 @@ class IBMVPCNodeProvider(NodeProvider):
 
         return node["network_interfaces"][0].get("primary_ip")['address']
 
-    @log_in_out
     def set_node_tags(self, node_id, tags) -> None:
         """
         updates local (file) tags cache. updates in memory cache if node_id and tags are specified 
@@ -621,7 +618,6 @@ class IBMVPCNodeProvider(NodeProvider):
 
         return {instance["id"]: instance}
 
-    @log_in_out
     def create_node(self, base_config, tags, count) -> None:
         """
         returns dict of {instance_id:instance_data} of nodes. creates 'count' number of nodes.
@@ -724,7 +720,6 @@ class IBMVPCNodeProvider(NodeProvider):
             else:
                 raise e
 
-    @log_in_out
     def terminate_nodes(self, node_ids)-> Optional[Dict[str, Any]]:
 
         if not node_ids:
@@ -739,7 +734,6 @@ class IBMVPCNodeProvider(NodeProvider):
         for future in cf.as_completed(futures):
             future.result()
 
-    @log_in_out
     def terminate_node(self, node_id)-> Optional[Dict[str, Any]]:
         """Deletes the VM instance and the associated volume. 
         if cache_stopped_nodes==true in the cluster config file, nodes are stopped instead. """
