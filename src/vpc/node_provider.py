@@ -44,9 +44,8 @@ from ray.autoscaler.tags import (
 )
 
 LOGS_FOLDER = "/tmp/connector_logs/"   # this node_provider's logs location. 
-logging.basicConfig(level = logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
-
 
 INSTANCE_NAME_UUID_LEN = 8
 INSTANCE_NAME_MAX_LEN = 64
@@ -176,8 +175,10 @@ class IBMVPCNodeProvider(NodeProvider):
         NodeProvider.__init__(self, provider_config, cluster_name)
 
         logs_path = get_logs_path()
-        fileHandler = logging.FileHandler(logs_path)
-        logger.addHandler(fileHandler)
+        file_handler = logging.FileHandler(logs_path)
+        # file_handler.addFilter(LogLevelFilter(logging.DEBUG))
+        file_handler.setLevel(logging.DEBUG)
+        logger.addHandler(file_handler)
 
         self.lock = threading.RLock()
         self.endpoint = self.provider_config["endpoint"]
