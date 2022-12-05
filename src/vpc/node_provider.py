@@ -44,7 +44,7 @@ from ray.autoscaler.tags import (
 )
 
 LOGS_FOLDER = "/tmp/connector_logs/"   # this node_provider's logs location. 
-logging.basicConfig(level = logging.INFO,  format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(level = logging.DEBUG,  format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
 
 
