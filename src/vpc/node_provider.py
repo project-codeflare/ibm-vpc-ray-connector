@@ -44,8 +44,8 @@ from ray.autoscaler.tags import (
 )
 
 LOGS_FOLDER = "/tmp/connector_logs/"   # this node_provider's logs location. 
-logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 INSTANCE_NAME_UUID_LEN = 8
 INSTANCE_NAME_MAX_LEN = 64
@@ -174,11 +174,7 @@ class IBMVPCNodeProvider(NodeProvider):
         """
         NodeProvider.__init__(self, provider_config, cluster_name)
 
-        logs_path = get_logs_path()
-        file_handler = logging.FileHandler(logs_path)
-        # file_handler.addFilter(LogLevelFilter(logging.DEBUG))
-        file_handler.setLevel(logging.DEBUG)
-        logger.addHandler(file_handler)
+        _configure_logger()
 
         self.lock = threading.RLock()
         self.endpoint = self.provider_config["endpoint"]
@@ -788,9 +784,28 @@ class IBMVPCNodeProvider(NodeProvider):
     @staticmethod
     def bootstrap_config(cluster_config)-> Dict[str, Any]:
         return cluster_config
-    
-def get_logs_path():
+
+def _configure_logger():
+    """
+    Configures the logger of this module for console output and file output
+    logs of level DEBUG and higher will be directed to file under LOGS_FOLDER.
+    logs of level INFO and higher will be directed to console output. 
+        This level can be modified via setting an environment variable LOGLEVEL.
+    """
+
     if not os.path.exists(LOGS_FOLDER):
         os.mkdir(LOGS_FOLDER)
-    return LOGS_FOLDER + time.strftime("%Y-%m-%d--%H-%M-%S")
+    logs_path =  LOGS_FOLDER + time.strftime("%Y-%m-%d--%H-%M-%S")
 
+    file_formatter   = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+    file_handler = logging.FileHandler(logs_path)
+    file_handler.setFormatter(file_formatter)
+    file_handler.setLevel(logging.DEBUG)
+
+    console_output_handler = logging.StreamHandler()
+    console_output_handler.setFormatter(file_formatter)
+    console_output_handler.setLevel(level=os.environ.get("LOGLEVEL", "INFO"))
+
+    logger.addHandler(file_handler)
+    logger.addHandler(console_output_handler)    

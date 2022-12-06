@@ -1,6 +1,7 @@
 # ibm-vpc-ray-connector enables Ray cluster to be deployed over IBM VPC infrastructure
 
-> Use of python virtual environment, e.g. [virtualenv](https://virtualenv.pypa.io/en/latest) is greatly encouraged, to avoid installing Python packages globally which could break system tools or other projects
+## Setup
+> Use of python virtual environment, e.g. [virtualenv](https://virtualenv.pypa.io/en/latest), is greatly encouraged to avoid installing Python packages globally, which could break system tools or other projects
 
 1. Install ibm-vpc-ray-connector on your machine
 
@@ -20,10 +21,8 @@ pip install ibm-vpc-ray-connector
     pip install ibm-ray-config
     ibm-ray-config -o cluster.yaml
     ```
-    
-4. Use generated file to bring ray cluster up, e.g
-
-```ray up cluster.yaml```
+## Usage
+- Use generated file to bring ray cluster up, e.g `ray up cluster.yaml`.
 
 * After finished, find cluster head node and worker nodes ips:
 
@@ -41,3 +40,8 @@ ray status --address PUBLIC_HEAD_IP:6379
 * Use browser to open ray dashboard on PUBLIC_HEAD_IP:8265. Alternatively use `ray dashboard` to forward ray cluster dashboard to your localhost. 
 
 * Submit example task `ray submit cluster.yaml templates/example.py`
+
+## Logs
+Logs for the node_provider can be found under `/tmp/connector_logs/`.
+Logs of all levels will be written to `connector_logs`.
+The default log level for console output is `INFO`, but can be altered by setting the environment variable `LOGLEVEL`.    
