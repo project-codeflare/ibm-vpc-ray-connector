@@ -22,6 +22,8 @@ import re
 import socket
 import threading
 import time
+import os
+import shutil
 from pathlib import Path
 from uuid import uuid4
 
@@ -41,7 +43,9 @@ from ray.autoscaler.tags import (
     TAG_RAY_NODE_NAME,
 )
 
+LOGS_FOLDER = "/tmp/connector_logs/"   # this node_provider's logs location. 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 INSTANCE_NAME_UUID_LEN = 8
 INSTANCE_NAME_MAX_LEN = 64
@@ -139,7 +143,7 @@ class IBMVPCNodeProvider(NodeProvider):
                     "instances"
                 ]
                 if node:
-                    logger.debug(f"{name} is node {node} in vpc")
+                    logger.debug(f"{name} is node in vpc")
 
                     ray_bootstrap_config = Path.home() / "ray_bootstrap_config.yaml"  # reads the cluster's config file (an initialized defaults.yaml)
                     config = json.loads(ray_bootstrap_config.read_text())
@@ -169,6 +173,8 @@ class IBMVPCNodeProvider(NodeProvider):
 
         """
         NodeProvider.__init__(self, provider_config, cluster_name)
+
+        _configure_logger()
 
         self.lock = threading.RLock()
         self.endpoint = self.provider_config["endpoint"]
@@ -249,7 +255,7 @@ class IBMVPCNodeProvider(NodeProvider):
 
         return nodes
 
-    @log_in_out
+    
     def non_terminated_nodes(self, tag_filters)-> List[str]:
         """ 
         returns list of ids of non terminated nodes, matching the specified tags. updates the nodes cache.
@@ -320,14 +326,14 @@ class IBMVPCNodeProvider(NodeProvider):
 
         return [node["id"] for node in res_nodes]
 
-    @log_in_out
+    
     def is_running(self, node_id)-> bool:
         """returns whether a node is in status running"""
         with self.lock:
             node = self._get_cached_node(node_id)
             return node["status"] == "running"
 
-    @log_in_out
+    
     def is_terminated(self, node_id)-> bool:
         """returns True if a node is either not recorded or not in any valid status."""
         with self.lock:
@@ -337,7 +343,7 @@ class IBMVPCNodeProvider(NodeProvider):
             except Exception:
                 return True
 
-    @log_in_out
+    
     def node_tags(self, node_id)-> Dict[str, str]:
         """returns tags of specified node id """
 
@@ -360,8 +366,7 @@ class IBMVPCNodeProvider(NodeProvider):
                 return fip[0]["address"]
         else:
             return self.internal_ip(node_id)
-
-    @log_in_out
+  
     def external_ip(self, node_id)-> str:
         """returns head node's public ip. 
         if use_hybrid_ips==true in cluster's config file, returns the ip address of a node based on its 'Kind'."""
@@ -375,7 +380,6 @@ class IBMVPCNodeProvider(NodeProvider):
             if fip:
                 return fip[0]["address"]
 
-    @log_in_out
     def internal_ip(self, node_id)-> str:
         """returns the worker's node private ip address"""
         node = self._get_cached_node(node_id)
@@ -387,11 +391,10 @@ class IBMVPCNodeProvider(NodeProvider):
         except Exception:
             node = self._get_node(node_id)
 
-        logger.debug(f"in internal_ip, returning ip for node {node}")
+        logger.debug(f"in internal_ip, returning ip for node: {node['name']}, id: {node_id}")
 
         return node["network_interfaces"][0].get("primary_ip")['address']
 
-    @log_in_out
     def set_node_tags(self, node_id, tags) -> None:
         """
         updates local (file) tags cache. updates in memory cache if node_id and tags are specified 
@@ -614,7 +617,6 @@ class IBMVPCNodeProvider(NodeProvider):
 
         return {instance["id"]: instance}
 
-    @log_in_out
     def create_node(self, base_config, tags, count) -> None:
         """
         returns dict of {instance_id:instance_data} of nodes. creates 'count' number of nodes.
@@ -717,7 +719,6 @@ class IBMVPCNodeProvider(NodeProvider):
             else:
                 raise e
 
-    @log_in_out
     def terminate_nodes(self, node_ids)-> Optional[Dict[str, Any]]:
 
         if not node_ids:
@@ -732,7 +733,6 @@ class IBMVPCNodeProvider(NodeProvider):
         for future in cf.as_completed(futures):
             future.result()
 
-    @log_in_out
     def terminate_node(self, node_id)-> Optional[Dict[str, Any]]:
         """Deletes the VM instance and the associated volume. 
         if cache_stopped_nodes==true in the cluster config file, nodes are stopped instead. """
@@ -784,3 +784,28 @@ class IBMVPCNodeProvider(NodeProvider):
     @staticmethod
     def bootstrap_config(cluster_config)-> Dict[str, Any]:
         return cluster_config
+
+def _configure_logger():
+    """
+    Configures the logger of this module for console output and file output
+    logs of level DEBUG and higher will be directed to file under LOGS_FOLDER.
+    logs of level INFO and higher will be directed to console output. 
+        This level can be modified via setting an environment variable LOGLEVEL.
+    """
+
+    if not os.path.exists(LOGS_FOLDER):
+        os.mkdir(LOGS_FOLDER)
+    logs_path =  LOGS_FOLDER + time.strftime("%Y-%m-%d--%H-%M-%S")
+
+    file_formatter   = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+    file_handler = logging.FileHandler(logs_path)
+    file_handler.setFormatter(file_formatter)
+    file_handler.setLevel(logging.DEBUG)
+
+    console_output_handler = logging.StreamHandler()
+    console_output_handler.setFormatter(file_formatter)
+    console_output_handler.setLevel(level=os.environ.get("INFO"))
+
+    logger.addHandler(file_handler)
+    logger.addHandler(console_output_handler)    
