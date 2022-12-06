@@ -805,7 +805,7 @@ def _configure_logger():
 
     console_output_handler = logging.StreamHandler()
     console_output_handler.setFormatter(file_formatter)
-    console_output_handler.setLevel(level=os.environ.get("LOGLEVEL", "INFO"))
+    console_output_handler.setLevel(level=os.environ.get("INFO"))
 
     logger.addHandler(file_handler)
     logger.addHandler(console_output_handler)    

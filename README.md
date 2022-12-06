@@ -42,6 +42,6 @@ ray status --address PUBLIC_HEAD_IP:6379
 * Submit example task `ray submit cluster.yaml templates/example.py`
 
 ## Logs
-Logs for the node_provider can be found under `/tmp/connector_logs/`.
-Logs of all levels will be written to `connector_logs`.
-The default log level for console output is `INFO`, but can be altered by setting the environment variable `LOGLEVEL`.    
+Logs for the node_provider can be found under `/tmp/connector_logs/`.  
+Logs of all levels will be written to `connector_logs`.  
+The default log level for console output is `INFO`.   
