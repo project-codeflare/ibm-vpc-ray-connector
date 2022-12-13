@@ -289,7 +289,7 @@ class IBMVPCNodeProvider(NodeProvider):
             with self.lock:
                 if node["id"] in self.pending_nodes:
                     if node["status"] != "running":
-                        pending_time = self.pending_nodes[node["id"]] - time.time()
+                        pending_time = time.time() - self.pending_nodes[node["id"]]
                         logger.debug(f"{node['id']} is pending for {pending_time}")
                         if pending_time > PENDING_TIMEOUT:
                             logger.error(
