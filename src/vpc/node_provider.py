@@ -23,7 +23,7 @@ import socket
 import threading
 import time
 import os
-import shutil
+from pprint import pprint
 from pathlib import Path
 from uuid import uuid4
 
@@ -90,15 +90,15 @@ class IBMVPCNodeProvider(NodeProvider):
         def decorated_func(*args, **kwargs):
             name = func.__name__
             logger.debug(
-                f"Enter {name} from {inspect.stack()[0][3]} "
+                f"\n\nEnter {name} from {inspect.stack()[0][3]} "
                 f"{inspect.stack()[1][3]} {inspect.stack()[2][3]} with args: "
-                f"{args} and kwargs {kwargs}"
+                f"entered with args:\n{pprint(args)} and kwargs {pprint(kwargs)}"
             )
             try:
                 result = func(*args, **kwargs)
                 logger.debug(
                     f"Leave {name} from {inspect.stack()[1][3]} with result "
-                    f"{result}, entered with args: {args}"
+                    f"Func Result:{pprint(result)}\n\n"
                 )
             except Exception:
                 cli_logger.error(f"Error in {name}")
@@ -331,6 +331,7 @@ class IBMVPCNodeProvider(NodeProvider):
         """returns whether a node is in status running"""
         with self.lock:
             node = self._get_cached_node(node_id)
+            logger.debug(f"""node: {node_id} is_running? {node["status"] == "running"}""")
             return node["status"] == "running"
 
     
@@ -339,8 +340,10 @@ class IBMVPCNodeProvider(NodeProvider):
         with self.lock:
             try:
                 node = self._get_cached_node(node_id)
+                logger.debug(f"""node: {node_id} is_terminated? {node["status"] not in ["running", "starting", "pending"]}""")
                 return node["status"] not in ["running", "starting", "pending"]
             except Exception:
+                logger.debug(f"""node: {node_id} is_terminated? TRUE""")
                 return True
 
     
@@ -390,8 +393,6 @@ class IBMVPCNodeProvider(NodeProvider):
                 node = self._get_node(node_id)
         except Exception:
             node = self._get_node(node_id)
-
-        logger.debug(f"in internal_ip, returning ip for node: {node['name']}, id: {node_id}")
 
         return node["network_interfaces"][0].get("primary_ip")['address']
 
@@ -617,6 +618,7 @@ class IBMVPCNodeProvider(NodeProvider):
 
         return {instance["id"]: instance}
 
+    # @log_in_out
     def create_node(self, base_config, tags, count) -> None:
         """
         returns dict of {instance_id:instance_data} of nodes. creates 'count' number of nodes.
@@ -629,7 +631,7 @@ class IBMVPCNodeProvider(NodeProvider):
             count(int): number of nodes to create. 
 
         """
-
+        logger.debug(f"""create_node: count: {count}\ntags: {pprint(tags)}\nbase_config:{pprint(base_config)}\n """)
         stopped_nodes_dict = {}
         futures = []
 
@@ -732,7 +734,8 @@ class IBMVPCNodeProvider(NodeProvider):
 
         for future in cf.as_completed(futures):
             future.result()
-
+            
+    @log_in_out
     def terminate_node(self, node_id)-> Optional[Dict[str, Any]]:
         """Deletes the VM instance and the associated volume. 
         if cache_stopped_nodes==true in the cluster config file, nodes are stopped instead. """
