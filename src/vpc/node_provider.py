@@ -122,8 +122,14 @@ class IBMVPCNodeProvider(NodeProvider):
             # filters instances that were deleted since the last time the head node was up
             for instance_id, instance_tags in tags.items():
                 try: 
-                    self.ibm_vpc_client.get_instance(instance_id)
-                    self.nodes_tags[instance_id] = instance_tags
+                    instance = self.ibm_vpc_client.get_instance(instance_id).get_result()
+                    if instance and instance["status"] not in ["deleting","failed"]:
+                        self.nodes_tags[instance_id] = instance_tags
+                    else:
+                        logger.warning(
+                            f"cached instance {instance_id} is not in a valid state, \
+                                and will be removed from cache"
+                        )
                 except Exception as e:
                     cli_logger.warning(instance_id)
                     if e.message == "Instance not found":
@@ -343,7 +349,6 @@ class IBMVPCNodeProvider(NodeProvider):
                 logger.debug(f"""node: {node_id} is_terminated? {node["status"] not in ["running", "starting", "pending"]}""")
                 return node["status"] not in ["running", "starting", "pending"]
             except Exception:
-                logger.debug(f"""node: {node_id} is_terminated? TRUE""")
                 return True
 
     
@@ -446,7 +451,7 @@ class IBMVPCNodeProvider(NodeProvider):
 
         boot_volume_profile = {
             "capacity": base_config.get("boot_volume_capacity", 100),
-            "name": "{}-boot".format(name),
+            "name": f"boot-volume-{uuid4().hex[:4]}",
             "profile": {
                 "name": base_config.get("volume_tier_name", VOLUME_TIER_NAME_DEFAULT)
             },
@@ -631,7 +636,7 @@ class IBMVPCNodeProvider(NodeProvider):
             count(int): number of nodes to create. 
 
         """
-        logger.debug(f"""create_node: count: {count}\ntags: {pprint(tags)}\nbase_config:{pprint(base_config)}\n """)
+        logger.debug(f"""create_node:\ncount:{count}\ntags:{pprint(tags)}\nbase_config:{pprint(base_config)}\n """)
         stopped_nodes_dict = {}
         futures = []
 
