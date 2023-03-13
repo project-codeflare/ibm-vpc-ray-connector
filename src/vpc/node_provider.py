@@ -477,6 +477,9 @@ class IBMVPCNodeProvider(NodeProvider):
         instance_prototype["boot_volume_attachment"] = boot_volume_attachment
         instance_prototype["primary_network_interface"] = primary_network_interface
 
+        if "user_data" in base_config:
+            instance_prototype["user_data"] = base_config["user_data"]
+
         try:
             with self.lock:
                 resp = self.ibm_vpc_client.create_instance(instance_prototype)
