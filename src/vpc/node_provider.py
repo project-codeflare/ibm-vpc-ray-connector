@@ -477,6 +477,12 @@ class IBMVPCNodeProvider(NodeProvider):
         instance_prototype["boot_volume_attachment"] = boot_volume_attachment
         instance_prototype["primary_network_interface"] = primary_network_interface
 
+        if "user_data" in base_config:
+            instance_prototype["user_data"] = base_config["user_data"]
+
+        if "metadata_service" in base_config:
+            instance_prototype["metadata_service"] = base_config["metadata_service"]
+
         try:
             with self.lock:
                 resp = self.ibm_vpc_client.create_instance(instance_prototype)
