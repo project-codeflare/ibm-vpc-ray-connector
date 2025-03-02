@@ -1,4 +1,5 @@
-# ibm-vpc-ray-connector enables Ray cluster to be deployed over IBM VPC infrastructure
+# ibm-vpc-ray-connector
+A connector for [Ray](https://github.com/ray-project/ray) over IBM VPC infrastructure.
 
 ## Setup
 > Use of python virtual environment, e.g. [virtualenv](https://virtualenv.pypa.io/en/latest), is greatly encouraged to avoid installing Python packages globally, which could break system tools or other projects
